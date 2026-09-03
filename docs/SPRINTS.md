@@ -18,8 +18,14 @@ merged.
 
 - Root aggregator `pom.xml`: `dependencyManagement` (Spring Boot BOM, Spring Cloud BOM), shared
   properties, module list.
-- Empty Spring Boot module skeletons for all nine services (`Application` class + empty
-  `pom.xml` per `RULES.md` §4 — no business dependencies yet).
+- Empty Spring Boot module skeletons for all nine services: `pom.xml` (`RULES.md` §4 — no
+  business dependencies yet), one empty `*Application` class, a
+  `src/main/resources/application.properties` declaring just `spring.application.name`, and a
+  `src/test/java/**/*ApplicationTests.java` with an empty `contextLoads()` test — the same four
+  pieces every module gets, so no service starts out structurally different from another.
+  `common` is the one exception: no `Application` class, no `resources`, no `test` yet, since it
+  has no bootable context and no code to test until §3's shared-vs-local content actually lands
+  in it.
 - `docs/RULES.md` and `docs/SPRINTS.md` (this document) merged.
 - Base GitHub Actions workflow template (build + unit test on PR) and branch protection rules on
   `main` (required checks, auto-merge enabled).
