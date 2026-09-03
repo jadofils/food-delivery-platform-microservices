@@ -50,31 +50,39 @@ trivial PR against any module demonstrates the CI gate + auto-merge working end 
 
 - `discovery-server` (Eureka) stood up, dashboard reachable at `:8761`.
 - `config-server` stood up serving externalized config to registered clients.
-- `identity-service`: user registration/login, JWT issuance (RS256) with JWKS endpoint.
-  `identity_db` with baseline Flyway migration.
+- `identity-service`: user registration/login, nested-JWT issuance (RS256 signed, then A256GCM
+  encrypted — `RULES.md` §8). `identity_db` with baseline Flyway migration. **Delivered ahead of
+  Eureka/Config Server registration below** — the signing/encryption keys are generated in memory
+  at startup for now, which is what makes JWKS distribution and cross-instance key sharing wait
+  on Config Server; that dependency is now concrete, not theoretical.
 - **Role & permission management (RBAC), scoped entirely to `identity-service`:**
   - Schema: `User`, `Role`, `Permission`, `role_permissions`, `user_roles` — permissions are
     fine-grained action strings (`order:create`, `restaurant:menu:write`,
     `delivery:status:update`, …), never bare role names, so downstream services authorize on
     capability, not identity.
   - A Flyway migration seeds the baseline roles from `RULES.md` §8 (`CUSTOMER`,
-    `RESTAURANT_OWNER`, `DELIVERY_AGENT`, `ADMIN`) and their default permission grants.
+    `RESTAURANT_OWNER`, `DELIVERY_AGENT`, `ADMIN`) and their default permission grants, plus one
+    demo user per role so the system is usable immediately — see `credentials.md`.
   - An admin CRUD API (itself gated behind an admin-only permission) to manage roles,
     permissions, and role-permission assignments without a redeploy.
   - JWT issuance embeds the caller's **permission** claims (not just role names) so every other
     service can authorize locally and statelessly (`RULES.md` §8, factor 6) — no service calls
     `identity-service` per request to ask "can this user do X."
-  - Enforcement itself is *not* built here: each domain service adds its own
-    `@PreAuthorize`/method-security checks against these claims in its own sprint (Sprint 2 for
-    `customer-`/`restaurant-service`, Sprint 3 for `order-service`, Sprint 5 for
-    `delivery-`/`notification-service`). `api-gateway` (Sprint 4) only authenticates the token; it
-    does not perform fine-grained authorization.
+  - **Enforcement was built here too**, ahead of schedule, using the lightweight
+    `@Public`/`@RequiresPermission`/`PermissionInterceptor` pattern from `common` (`RULES.md` §8)
+    rather than Spring Security's `@PreAuthorize` — every `identity-service` endpoint except
+    `/api/v1/auth/*` now requires a valid, permission-checked token. Other services adopt the same
+    `common` pattern in their own sprint (Sprint 2 for `customer-`/`restaurant-service`, Sprint 3
+    for `order-service`, Sprint 5 for `delivery-`/`notification-service`). `api-gateway`
+    (Sprint 4) only authenticates the token at the edge; each service's own interceptor remains
+    the real enforcement point (defense in depth).
 - `identity-service` CI pipeline with Testcontainers Postgres.
 
 **Exit criteria:** `identity-service` registers with Eureka and pulls config from `config-server`;
-a client can register, log in, and receive a valid JWT carrying permission claims; an admin can
-create a role, attach permissions to it, and assign it to a user entirely through
-`identity-service`'s own API.
+a client can register, log in, and receive a valid nested JWT carrying permission claims; an admin
+can create a role, attach permissions to it, and assign it to a user entirely through
+`identity-service`'s own API; every non-`/auth` endpoint rejects a missing or insufficient token
+with the standard error envelope.
 
 ---
 

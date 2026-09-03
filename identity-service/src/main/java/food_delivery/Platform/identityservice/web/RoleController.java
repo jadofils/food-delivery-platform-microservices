@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import food_delivery.Platform.common.security.jwt.RequiresPermission;
 import food_delivery.Platform.identityservice.dto.RoleRequest;
 import food_delivery.Platform.identityservice.dto.RoleResponse;
 import food_delivery.Platform.identityservice.dto.RoleSummaryResponse;
@@ -21,10 +22,12 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
+/** Class-level {@link RequiresPermission}: every role-management operation needs the same permission. */
 @RestController
 @RequestMapping("/api/v1/roles")
 @RequiredArgsConstructor
 @Tag(name = "Roles", description = "Roles and their permission grants")
+@RequiresPermission("role:manage")
 public class RoleController {
 
 	private final RoleService roleService;

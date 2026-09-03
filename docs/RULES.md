@@ -193,23 +193,74 @@ class to a single service — the fan-out above is exactly why.
 
 ## 8. Security
 
-- `identity-service` is the sole issuer of JWTs (RS256, asymmetric). It owns users, roles, and
-  permissions, and exposes a JWKS endpoint for public-key distribution — nobody else calls it
-  per-request to validate a token.
-- `api-gateway` validates every inbound token's signature, expiry, and issuer at the edge before
-  routing. Roles/permissions are embedded as JWT claims so downstream services can authorize
-  locally (`@PreAuthorize`) without a network call back to `identity-service` — this keeps
-  authorization stateless per factor 6.
-- Downstream services do not blindly trust gateway-forwarded identity headers in production; they
-  re-validate the JWT signature locally against the cached JWKS as defense-in-depth. This is still
-  a local, stateless check — it does not call `identity-service`.
+- `identity-service` is the sole issuer of JWTs. It owns users, roles, and permissions — nobody
+  else calls it per-request to validate a token; every service validates locally.
 - Baseline roles: `CUSTOMER`, `RESTAURANT_OWNER`, `DELIVERY_AGENT`, `ADMIN`. Permissions are
   fine-grained and mapped to roles inside `identity-service`; services authorize on permissions,
   not on role names directly, so permission-to-role mapping can change without touching every
   service.
-- Secrets (DB credentials, JWT signing keys, RabbitMQ credentials) are never committed. They are
-  injected via environment variables / Docker secrets and sourced from Config Server's encrypted
-  properties, not from a plaintext file in this repo.
+- Secrets (DB credentials, JWT signing/encryption keys, RabbitMQ credentials) are never committed.
+  They are injected via environment variables / Docker secrets and sourced from Config Server's
+  encrypted properties, not from a plaintext file in this repo.
+
+### JWT: shared kernel in `common`, issuance in `identity-service`
+
+The claim structure, the token codec, and the request-pipeline pieces every service reuses to
+enforce it all live in `common`'s `security.jwt` package — this is exactly the kind of "producer
+and consumer must agree atomically" concern §3's shared-vs-local table calls out for `common`.
+Only *issuance* (holding the private signing key, actually building a token at login) is
+`identity-service`-specific.
+
+- **Nested JWT — signed, then encrypted.** `JwtEncoder` builds a `JWTClaimsSet` (subject,
+  `permissions`, issued/expiry time — nothing else; email or any other display PII never goes in
+  a token, see below), signs it (RS256) into a `SignedJWT`, then encrypts that whole signed token
+  as the payload of a `JWEObject` (`A256GCM`, direct encryption). `JwtDecoder` reverses this:
+  decrypt, then verify the signature, then check issuer and expiry. Every failure mode — bad
+  signature, decryption failure, expired, wrong issuer, malformed input — surfaces as the same
+  `UnauthorizedException` with the same message, so a caller never learns which check failed.
+  Signing (RS256) answers *authenticity*; encryption (`A256GCM`) answers *confidentiality* — a
+  party without the encryption key cannot read the claims at all, only decode base64 noise.
+- **Two different keys, two different distribution stories.** The RS256 signing keypair is
+  asymmetric: only `identity-service` ever holds the private half; a validating service only
+  ever needs the public half (JWKS-style distribution — no secret to leak). The `A256GCM`
+  encryption key is symmetric by necessity (JWE-for-many-readers doesn't have an asymmetric
+  option that scales past one recipient): every validating service holds the *same* key, sourced
+  from Config Server once it exists. **Current state:** both keys are generated fresh in memory
+  at `identity-service` startup (`SecurityConfig`) — correct for a single-instance dev setup, but
+  tokens issued before a restart don't verify after one, and there is no key-distribution path to
+  other services yet. Both are explicitly deferred until Config Server exists; don't mistake the
+  current in-memory generation for the target design.
+- **Chaining — the servlet filter chain, not Spring Security.** No FDP service depends on
+  `spring-boot-starter-security`; `JwtAuthenticationFilter` (`common`) is a plain
+  `jakarta.servlet.Filter` each MVC-based service registers into its own filter chain. It reads
+  `Authorization: Bearer <token>`, decodes it via `JwtDecoder`, and attaches the resulting
+  `JwtClaims` to the request as an attribute for the next link — it does not reject a *missing*
+  token itself (plenty of endpoints are public), but a token that *is* present and invalid is
+  rejected immediately with 401 in the standard `ApiErrorResponse` shape, built by hand since a
+  filter runs before `@RestControllerAdvice` ever sees the request.
+- **Secure by default.** `PermissionInterceptor` (`common`, a Spring MVC `HandlerInterceptor`)
+  runs after the filter and enforces two annotations: `@Public` (this endpoint is intentionally
+  unauthenticated — registration, login) and `@RequiresPermission("x")` (the token's permissions
+  must contain `x`). An endpoint with **neither** annotation still requires a valid token — opting
+  out of authentication is explicit, opting in is the default. Because the interceptor runs inside
+  Spring MVC's own dispatch, its exceptions (`UnauthorizedException`, `ForbiddenException`) reach
+  `@RestControllerAdvice` normally, with no special-casing.
+- `api-gateway`, once it exists, sits in front of all of this doing coarse authentication at the
+  edge; it does not replace each service's own filter+interceptor pair, which stays the real
+  enforcement point (defense in depth — see §14's shared error envelope, which both layers use).
+
+### PII masking
+
+- Any field that is human-readable PII — email, username, phone number, anything a person would
+  recognize as identifying — is annotated `@Masked` (`common.security.masking`) in its response
+  DTO. Serialization replaces the value with `first character + fixed-width mask + last
+  character` (`PiiMasking`); the mask width never varies with input length, so it doesn't leak how
+  long the real value was.
+- **A structural identifier a client needs to address a resource with — a primary-key `id` used
+  in a URL path — is never masked.** Masking it would break the API's basic addressability (the
+  caller that just registered or looked up that exact record can no longer use the id it was just
+  given) without adding real protection, since a bare id exposes nothing by itself. Only
+  human-readable PII gets this treatment, not routing identifiers.
 
 ---
 

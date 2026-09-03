@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import food_delivery.Platform.common.security.jwt.RequiresPermission;
 import food_delivery.Platform.identityservice.dto.PermissionRequest;
 import food_delivery.Platform.identityservice.dto.PermissionResponse;
 import food_delivery.Platform.identityservice.service.PermissionService;
@@ -18,10 +19,12 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
+/** Same administrative surface as roles (RULES.md's seed data grants both under role:manage). */
 @RestController
 @RequestMapping("/api/v1/permissions")
 @RequiredArgsConstructor
 @Tag(name = "Permissions", description = "Fine-grained permission strings roles are built from")
+@RequiresPermission("role:manage")
 public class PermissionController {
 
 	private final PermissionService permissionService;

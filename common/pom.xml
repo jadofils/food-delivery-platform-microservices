@@ -44,6 +44,33 @@
 			<artifactId>jakarta.servlet-api</artifactId>
 			<scope>provided</scope>
 		</dependency>
+		<!--
+			provided, same reasoning as jakarta.servlet-api above: PermissionInterceptor implements
+			HandlerInterceptor, which lives in spring-webmvc specifically (unlike the exception
+			types AbstractGlobalExceptionHandler uses, which are plain spring-web). Every MVC-based
+			service already brings spring-webmvc via spring-boot-starter-web.
+		-->
+		<dependency>
+			<groupId>org.springframework</groupId>
+			<artifactId>spring-webmvc</artifactId>
+			<scope>provided</scope>
+		</dependency>
+		<!-- tools.jackson, not com.fasterxml.jackson: Boot 4 ships Jackson 3.x, a real rename
+			 (ObjectMapper/JsonSerializer->ValueSerializer/SerializerProvider->SerializationContext
+			 all moved groupId+package). Using the classic com.fasterxml.jackson.databind types
+			 here would compile fine but be silently invisible to Spring's actual (Jackson 3)
+			 ObjectMapper at runtime: a real trap worth this comment. jackson-annotations itself
+			 (com.fasterxml.jackson.annotation, incl. @JacksonAnnotationsInside) was NOT renamed. -->
+		<dependency>
+			<groupId>tools.jackson.core</groupId>
+			<artifactId>jackson-databind</artifactId>
+		</dependency>
+		<!-- Nested JWT (sign then encrypt) for JwtEncoder/JwtDecoder. Version centralized in the
+			 root aggregator's dependencyManagement, not here. -->
+		<dependency>
+			<groupId>com.nimbusds</groupId>
+			<artifactId>nimbus-jose-jwt</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>

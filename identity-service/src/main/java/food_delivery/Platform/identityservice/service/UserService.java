@@ -1,5 +1,7 @@
 package food_delivery.Platform.identityservice.service;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -14,10 +16,13 @@ import food_delivery.Platform.common.error.ConflictException;
 import food_delivery.Platform.common.error.LockedException;
 import food_delivery.Platform.common.error.ResourceNotFoundException;
 import food_delivery.Platform.common.error.UnauthorizedException;
+import food_delivery.Platform.common.security.jwt.JwtClaims;
+import food_delivery.Platform.common.security.jwt.JwtEncoder;
 import food_delivery.Platform.identityservice.domain.Permission;
 import food_delivery.Platform.identityservice.domain.Role;
 import food_delivery.Platform.identityservice.domain.User;
 import food_delivery.Platform.identityservice.dto.LoginRequest;
+import food_delivery.Platform.identityservice.dto.LoginResponse;
 import food_delivery.Platform.identityservice.dto.RegisterUserRequest;
 import food_delivery.Platform.identityservice.dto.UserResponse;
 import food_delivery.Platform.identityservice.repository.RoleRepository;
@@ -28,9 +33,13 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class UserService {
 
+	/** Short-lived on purpose — no refresh-token flow exists yet (a deliberately deferred follow-up). */
+	private static final Duration ACCESS_TOKEN_TTL = Duration.ofMinutes(15);
+
 	private final UserRepository userRepository;
 	private final RoleRepository roleRepository;
 	private final PasswordEncoder passwordEncoder;
+	private final JwtEncoder jwtEncoder;
 
 	@Transactional
 	public UserResponse register(RegisterUserRequest request) {
@@ -42,14 +51,13 @@ public class UserService {
 	}
 
 	/**
-	 * Validates credentials and returns the authenticated user with its roles/permissions.
-	 * Deliberately doesn't issue a token yet — see docs/services/identity-service.md for why
-	 * that's separate, later scope. The failure message never distinguishes "no such email" from
-	 * "wrong password", to avoid leaking which emails are registered (a classic user-enumeration
-	 * mistake).
+	 * Validates credentials and returns the authenticated user plus a signed-and-encrypted access
+	 * token carrying their permissions (RULES.md §8). The failure message never distinguishes
+	 * "no such email" from "wrong password", to avoid leaking which emails are registered (a
+	 * classic user-enumeration mistake).
 	 */
 	@Transactional(readOnly = true)
-	public UserResponse login(LoginRequest request) {
+	public LoginResponse login(LoginRequest request) {
 		User user = userRepository.findByEmail(request.email())
 				.orElseThrow(() -> new UnauthorizedException("Invalid email or password."));
 
@@ -62,7 +70,12 @@ public class UserService {
 		if (!user.isAccountNonLocked()) {
 			throw new LockedException("This account is locked.");
 		}
-		return toResponse(user);
+
+		UserResponse userResponse = toResponse(user);
+		Instant issuedAt = Instant.now();
+		String token = jwtEncoder.encode(new JwtClaims(user.getId().toString(), userResponse.permissions(),
+				issuedAt, issuedAt.plus(ACCESS_TOKEN_TTL)));
+		return new LoginResponse(userResponse, token);
 	}
 
 	@Transactional(readOnly = true)

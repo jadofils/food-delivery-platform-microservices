@@ -30,7 +30,23 @@
 
 	<properties>
 		<java.version>25</java.version>
+		<nimbus-jose-jwt.version>10.9</nimbus-jose-jwt.version>
 	</properties>
+
+	<!--
+		nimbus-jose-jwt isn't managed by the Spring Boot BOM (unlike Testcontainers), and more than
+		one module needs it (common, identity-service): centralized here so both declare just
+		the dependency, no version, per §4 below.
+	-->
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>com.nimbusds</groupId>
+				<artifactId>nimbus-jose-jwt</artifactId>
+				<version>${nimbus-jose-jwt.version}</version>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
 
 	<!--
 		This is a pure aggregator: packaging=pom, no <dependencies>, no <build><plugins> that

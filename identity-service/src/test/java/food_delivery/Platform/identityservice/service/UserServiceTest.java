@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Optional;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -16,6 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import food_delivery.Platform.common.error.ConflictException;
 import food_delivery.Platform.common.error.LockedException;
 import food_delivery.Platform.common.error.UnauthorizedException;
+import food_delivery.Platform.common.security.jwt.JwtEncoder;
 import food_delivery.Platform.identityservice.domain.User;
 import food_delivery.Platform.identityservice.dto.LoginRequest;
 import food_delivery.Platform.identityservice.dto.RegisterUserRequest;
@@ -27,7 +29,9 @@ class UserServiceTest {
 	private final UserRepository userRepository = mock(UserRepository.class);
 	private final RoleRepository roleRepository = mock(RoleRepository.class);
 	private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
-	private final UserService service = new UserService(userRepository, roleRepository, passwordEncoder);
+	private final JwtEncoder jwtEncoder = mock(JwtEncoder.class);
+	private final UserService service = new UserService(userRepository, roleRepository, passwordEncoder,
+			jwtEncoder);
 
 	@Test
 	void register_rejectsADuplicateEmail() {
@@ -61,7 +65,7 @@ class UserServiceTest {
 
 	@Test
 	void login_rejectsAWrongPasswordWithTheSameMessageAsAnUnknownEmail() {
-		User user = new User("a@fdp.test", "hashed");
+		User user = userWithId("a@fdp.test", "hashed");
 		when(userRepository.findByEmail("a@fdp.test")).thenReturn(Optional.of(user));
 		when(passwordEncoder.matches("wrong", "hashed")).thenReturn(false);
 
@@ -72,7 +76,7 @@ class UserServiceTest {
 
 	@Test
 	void login_rejectsALockedAccountEvenWithCorrectCredentials() {
-		User user = new User("a@fdp.test", "hashed");
+		User user = userWithId("a@fdp.test", "hashed");
 		user.setAccountNonLocked(false);
 		when(userRepository.findByEmail("a@fdp.test")).thenReturn(Optional.of(user));
 		when(passwordEncoder.matches("password123", "hashed")).thenReturn(true);
@@ -82,14 +86,22 @@ class UserServiceTest {
 	}
 
 	@Test
-	void login_succeedsWithCorrectCredentials() {
-		User user = new User("a@fdp.test", "hashed");
+	void login_succeedsWithCorrectCredentialsAndReturnsAToken() {
+		User user = userWithId("a@fdp.test", "hashed");
 		when(userRepository.findByEmail("a@fdp.test")).thenReturn(Optional.of(user));
 		when(passwordEncoder.matches("password123", "hashed")).thenReturn(true);
+		when(jwtEncoder.encode(any())).thenReturn("encoded-token");
 
 		var response = service.login(new LoginRequest("a@fdp.test", "password123"));
 
-		assertThat(response.email()).isEqualTo("a@fdp.test");
+		assertThat(response.user().email()).isEqualTo("a@fdp.test");
+		assertThat(response.accessToken()).isEqualTo("encoded-token");
+	}
+
+	private static User userWithId(String email, String passwordHash) {
+		User user = new User(email, passwordHash);
+		user.setId(UUID.randomUUID());
+		return user;
 	}
 
 }
