@@ -34,3 +34,31 @@ build/
 
 ### Local IDE/MCP config (machine-specific, not shared) ###
 .mcp.json
+
+### AI assistant tooling config (local guidance, not published) ###
+CLAUDE.md
+
+### Secrets & credentials — never commit these ###
+.env
+.env.*
+*.env
+**/application-secrets.yml
+**/application-secrets.yaml
+**/application-local.yml
+**/application-local.yaml
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+id_ecdsa*
+*credentials*.json
+*credentials*.yml
+*secrets*.json
+*secrets*.yml
+.aws/
+.gcp/
+*.tfvars
