@@ -1,0 +1,385 @@
+# FDP Engineering Rules
+
+**Status:** Planning stage — no service code exists yet. This document governs how the Food
+Delivery Platform (FDP) microservice system is designed and built once implementation starts.
+It is binding for any contributor, human or AI, working in this repository.
+
+This document assumes familiarity with [`ReadMe.md`](./ReadMe.md) (the base assignment: monolith
+→ four services). Everything below either extends that scope (Identity, Notification, Redis,
+observability, CI/CD) or makes an implicit assignment requirement explicit and non-negotiable.
+
+---
+
+## 1. Guiding principles — the Twelve Factors, applied to FDP
+
+Every service must satisfy all twelve. These are not aspirational — a service that violates one
+of these is not done, regardless of what its acceptance criteria say.
+
+| # | Factor | How it applies here |
+|---|--------|----------------------|
+| 1 | **Codebase** | One repository, one module per service, tracked in git. A module is independently buildable and independently deployable even though it lives in a shared repo — the monorepo is a convenience for review and CI, not a coupling mechanism. Never let one service's code import another service's package. |
+| 2 | **Dependencies** | Explicitly declared, never assumed. See [§4 Dependency management](#4-dependency-management) — the root POM manages *versions*, each service declares its own *dependencies*. |
+| 3 | **Config** | No hostnames, credentials, queue names, or feature flags in code. Config comes from Spring Cloud Config Server + environment variables / Docker secrets. `application-{profile}.yml` selects environment (`local`, `docker`, `staging`, `prod`) — it never contains secrets, only structure. |
+| 4 | **Backing services** | Postgres, MongoDB, RabbitMQ, Redis, Zipkin, Eureka, and Config Server are all attached resources, reachable only via config (URL + credentials). A service must be able to point at a different Postgres instance by changing config, not code. |
+| 5 | **Build, release, run** | CI builds one immutable artifact (Docker image tagged with git SHA) per merge to `main`. That same image is promoted across environments unchanged — config is injected at run time, never baked in at build time. |
+| 6 | **Processes** | Services are stateless and share-nothing. No in-memory HTTP sessions, no local file state. Anything that needs to persist across requests goes to Postgres/MongoDB; anything that needs to be shared across instances but is disposable goes to Redis. |
+| 7 | **Port binding** | Each service is self-contained and exports HTTP via its own embedded server (Netty/Tomcat) on its assigned port (see [§2](#2-service-inventory)). No service depends on being deployed inside an external servlet container. |
+| 8 | **Concurrency** | Scale by running more stateless instances of a service (horizontal scale-out via Eureka + Gateway load balancing), not by adding in-process threading complexity. |
+| 9 | **Disposability** | Fast startup, graceful shutdown (`server.shutdown=graceful`), and idempotent RabbitMQ consumers — a message redelivered after a crash must not double-charge an order or double-create a delivery. |
+| 10 | **Dev/prod parity** | `docker-compose.yml` runs the same Postgres/MongoDB/RabbitMQ/Redis versions locally as production. No H2, no embedded Mongo, no in-memory broker — ever, not even in tests (see [§9](#9-testing-rules)). |
+| 11 | **Logs** | Every service writes structured JSON logs to **stdout only**. It never opens a log file and never pushes logs over the network itself. Shipping stdout to Elasticsearch is the execution environment's job (Logstash/Filebeat), not the application's. |
+| 12 | **Admin processes** | Schema migrations (Flyway) and one-off data tasks run as one-off processes against the same codebase and config as the service — never as manual SQL run by hand against a live database. |
+
+---
+
+## 2. Service inventory
+
+| Service | Responsibility | Datastore | Port |
+|---|---|---|---|
+| `config-server` | Centralized externalized configuration for every other service | — | 8888 |
+| `discovery-server` | Eureka service registry | — | 8761 |
+| `api-gateway` | Single entry point: routing, JWT validation, rate limiting | — | 8080 |
+| `identity-service` | User accounts, roles, permissions (RBAC), JWT issuance | `identity_db` (Postgres) | 8081 |
+| `customer-service` | Customer profiles, delivery addresses | `customer_db` (Postgres) | 8082 |
+| `restaurant-service` | Restaurants, menus, menu items | `restaurant_db` (Postgres) | 8083 |
+| `order-service` | Order placement, order lifecycle | `order_db` (Postgres) | 8084 |
+| `delivery-service` | Delivery assignment and tracking | `delivery_db` (Postgres) | 8085 |
+| `notification-service` | Consumes domain events, dispatches notifications, persists notification/audit log | `notification_db` (MongoDB) | 8086 |
+
+Infrastructure (not services, but required backing resources): PostgreSQL, MongoDB, RabbitMQ,
+Redis, Zipkin, Elasticsearch, Logstash, Kibana. All defined in `docker-compose.yml` (see
+[§10](#10-containerization)).
+
+This supersedes the port list in `ReadMe.md`, which predates `identity-service` and
+`notification-service`.
+
+---
+
+## 3. Repository structure
+
+```
+fdp/
+├── pom.xml                    # aggregator: <packaging>pom</packaging>, dependencyManagement only
+├── config-server/
+├── discovery-server/
+├── api-gateway/
+├── identity-service/
+├── customer-service/
+├── restaurant-service/
+├── order-service/
+├── delivery-service/
+├── notification-service/
+├── common/                    # shared kernel — see rule below, keep this module small
+├── docker-compose.yml
+├── docs/
+│   ├── ReadMe.md
+│   ├── RULES.md
+│   ├── SPRINTS.md
+│   ├── architecture/          # diagrams
+│   ├── api-contracts/         # one OpenAPI spec per service
+│   ├── decisions/             # ADRs — why each service boundary was drawn where it was
+│   ├── services/               # one reference doc per service — see §17
+│   └── technologies/           # one reference doc per tech/tool — see §17
+└── .github/workflows/         # one workflow per service, path-filtered
+```
+
+`common` may hold event payload classes (e.g. `OrderPlacedEvent`), the shared `DomainException`
+hierarchy and `ApiErrorResponse` DTO used by every service's global exception handler (§14), and
+JWT-claims parsing utilities. It must **never** hold a JPA `@Entity`, a `@Repository`, or
+anything that would let two services share a table. If a class in `common` starts accumulating
+service-specific logic, that's a sign it should move into the service that owns it.
+
+---
+
+## 4. Dependency management
+
+- The root `pom.xml` is a `pom`-packaged aggregator. It declares the module list and a
+  `<dependencyManagement>` block (Spring Boot BOM, Spring Cloud BOM, and any shared library
+  versions) plus shared `<properties>` (`java.version`, `spring-cloud.version`). It does **not**
+  declare a `<dependencies>` block — nothing should be force-inherited onto every service.
+- Each service's own `pom.xml` declares the actual `<dependencies>` it uses, without version
+  numbers (inherited from the parent's `dependencyManagement`). `api-gateway` does not depend on
+  `spring-boot-starter-data-jpa`; `identity-service` does not depend on `spring-cloud-starter-gateway`.
+  A service's POM should read as an accurate list of what that service actually needs.
+- Never copy a dependency version into a service POM to "pin" it — bump the version in the root
+  BOM/properties instead, so every service moves together and drift is impossible.
+
+---
+
+## 5. Data ownership
+
+- **Database per service.** Each service owns its schema/database exclusively. No service ever
+  connects to another service's database, and no table is ever joined across service boundaries.
+  Cross-domain data needs are satisfied via REST (OpenFeign) or async events, never SQL.
+- Postgres services may share a single Postgres **server instance** in `docker-compose` for local
+  resource efficiency (one container, five logical databases via init scripts), but each service's
+  datasource credentials, connection pool, and Flyway migration history remain fully isolated. A
+  production topology may split these onto separate managed instances without any application
+  code change — that's the point of factor 4.
+- Every Postgres-backed service owns its schema via **Flyway** migrations under
+  `src/main/resources/db/migration`. Migrations are additive and forward-only on `main`; a mistake
+  is fixed with a new migration, not by editing a merged one.
+- **Operational logs vs. notification/audit logs — do not conflate these:**
+  - *Operational/application logs* (what the ELK stack is for) are ephemeral, aggregated
+    centrally from stdout, and never written to a service's own database. Retention is managed by
+    Elasticsearch ILM, not application code.
+  - *Notification/audit records* (what "manage notifications in DB" means) are a business
+    entity: a permanent record of what was sent, to whom, over which channel, and its delivery
+    status. These are owned and persisted by `notification-service` in MongoDB
+    (`notification_db`), queryable through its own API. They are domain data, not log output.
+
+---
+
+## 6. Communication rules
+
+- **Synchronous (OpenFeign over REST):** used only when the caller needs an immediate answer to
+  proceed — e.g. `order-service` validating a menu item's price with `restaurant-service` before
+  accepting an order. Every Feign client is wrapped in a Resilience4j circuit breaker with an
+  explicit fallback (see [§7](#7-resilience)). Synchronous calls always go through Eureka
+  (`lb://restaurant-service`), never a hardcoded host.
+- **Asynchronous (RabbitMQ):** used for anything the caller doesn't need to wait on — delivery
+  assignment, notifications, audit trail. Domain events are published to topic exchanges, named
+  `<Entity><PastTenseVerb>Event` (`OrderPlacedEvent`, `OrderCancelledEvent`,
+  `DeliveryStatusUpdatedEvent`). Every consumer queue has a dead-letter queue; consumers are
+  idempotent (dedupe on event ID) because RabbitMQ guarantees at-least-once delivery, not
+  exactly-once.
+- A service is never both the synchronous caller and the async publisher for the same fact in the
+  same flow — pick one per interaction and document why in the relevant ADR.
+
+---
+
+## 7. Resilience
+
+- Every outbound Feign/HTTP call is wrapped in Resilience4j: circuit breaker, retry, timeout, and
+  bulkhead are all configured explicitly per client — no service relies on Resilience4j defaults.
+- Every circuit breaker has a fallback that returns a clear, typed error to the caller (e.g. "menu
+  service unavailable, try again") — never a raw timeout or a stack trace.
+- Circuit breaker state (`CLOSED`/`OPEN`/`HALF_OPEN`) must be observable via that service's
+  Actuator endpoint.
+- The system must keep functioning with any one downstream dependency down. In particular: orders
+  can still be placed if `delivery-service` is down; browsing still works if `order-service` is
+  down.
+
+---
+
+## 8. Security
+
+- `identity-service` is the sole issuer of JWTs (RS256, asymmetric). It owns users, roles, and
+  permissions, and exposes a JWKS endpoint for public-key distribution — nobody else calls it
+  per-request to validate a token.
+- `api-gateway` validates every inbound token's signature, expiry, and issuer at the edge before
+  routing. Roles/permissions are embedded as JWT claims so downstream services can authorize
+  locally (`@PreAuthorize`) without a network call back to `identity-service` — this keeps
+  authorization stateless per factor 6.
+- Downstream services do not blindly trust gateway-forwarded identity headers in production; they
+  re-validate the JWT signature locally against the cached JWKS as defense-in-depth. This is still
+  a local, stateless check — it does not call `identity-service`.
+- Baseline roles: `CUSTOMER`, `RESTAURANT_OWNER`, `DELIVERY_AGENT`, `ADMIN`. Permissions are
+  fine-grained and mapped to roles inside `identity-service`; services authorize on permissions,
+  not on role names directly, so permission-to-role mapping can change without touching every
+  service.
+- Secrets (DB credentials, JWT signing keys, RabbitMQ credentials) are never committed. They are
+  injected via environment variables / Docker secrets and sourced from Config Server's encrypted
+  properties, not from a plaintext file in this repo.
+
+---
+
+## 9. Testing rules
+
+- Any test that touches Postgres, MongoDB, or RabbitMQ runs against the **real** thing via
+  **Testcontainers**. H2, embedded Mongo, and in-memory brokers are not acceptable substitutes at
+  any test level — this is what makes the CI auto-merge gate in [§11](#11-cicd--auto-merge)
+  trustworthy.
+- Feign clients get consumer-driven contract tests, not just mocked-response unit tests.
+- End-to-end coverage (Postman collection through the gateway, per `ReadMe.md` §5.1) runs against
+  the full `docker-compose` stack, not against services started individually.
+
+---
+
+## 10. Containerization
+
+- Every service builds its image **two ways**, deliberately, not redundantly:
+  - **Jib** (`jib-maven-plugin`, configured in each service's own `pom.xml`) is the mechanism CI
+    actually uses (§11) to produce and push the image on merge to `main`. Jib needs no Docker
+    daemon and no `Dockerfile`, builds reproducible layers straight from the Maven build, and is
+    faster in CI — this is the production path.
+  - A hand-written **multi-stage `Dockerfile`** (build stage → slim runtime stage) is also
+    maintained per service, kept for learning purposes and for anyone who wants to `docker build`
+    a service manually without Maven. It is not what CI runs, and the two must not silently
+    diverge — if a service's runtime dependencies change, update both.
+- `docker-compose.yml` at the repo root starts the complete system: all nine services plus
+  Postgres, MongoDB, RabbitMQ, Redis, Zipkin, Elasticsearch, Logstash, Kibana, Prometheus, and
+  Grafana (§13). Locally, `docker-compose.yml` references images built by Jib
+  (`jib:dockerBuild` for a local-only image, or the registry tag CI already pushed) — it does not
+  invoke the learning-purpose Dockerfiles as part of the standard `docker compose up` flow.
+- Health checks are mandatory on every container; `depends_on` uses `condition: service_healthy`
+  so `discovery-server` and `config-server` are ready before dependents start, and infra
+  (databases, broker) is ready before any service that needs it.
+- Each service ships an `application-docker.yml` using Docker service names for hostnames
+  (`jdbc:postgresql://postgres:5432/order_db`) and environment variables for secrets — never a
+  hardcoded `localhost`.
+
+---
+
+## 11. CI/CD & auto-merge
+
+- **Branching:** `main` is protected and always deployable. All work happens on
+  `feature/<service-name>-<short-description>` (e.g. `feature/order-service-place-order-endpoint`).
+  Non-feature work uses `fix/`, `chore/`, or `docs/` in place of `feature/`. One branch changes one
+  service (or one clearly-scoped cross-cutting concern, e.g. `chore/root-pom-bump-spring-boot`) —
+  never bundle unrelated services into one branch.
+- **Pipeline:** one GitHub Actions workflow per service, path-filtered so a change to
+  `order-service/**` doesn't trigger `restaurant-service`'s pipeline. A change to `common/**`
+  triggers every service that depends on it.
+- **Required checks** before merge is even considered: compile, unit tests, Testcontainers
+  integration tests, lint. All must be green and the branch must be up to date with `main`.
+- **Auto-merge:** once required checks pass, the PR is merged into `main` automatically (GitHub's
+  native auto-merge, gated on branch protection required-checks). No manual approval step blocks
+  this — the Testcontainers suite *is* the gate. There is no force-merge bypass outside a
+  documented hotfix procedure.
+- **On merge to `main`:** CI runs `mvn jib:build` to build and push a Docker image tagged with the
+  git SHA (and a semver tag for releases) directly to the registry, per §10. The same image is
+  what gets promoted to staging/prod — never rebuilt per environment.
+
+---
+
+## 12. Caching (Redis)
+
+- Redis is the single centralized cache — no per-instance local/in-memory caches, which would
+  break statelessness across horizontally-scaled replicas (factor 6 and factor 8).
+- Cache keys are namespaced per service (`restaurant-service:menu:{id}`,
+  `gateway:rate-limit:{clientId}`) so services can share one Redis instance without key collisions.
+- Every cache entry has an explicit TTL. Nothing is cached indefinitely.
+- Primary uses: `api-gateway` rate limiting (Spring Cloud Gateway `RequestRateLimiter` backed by
+  Redis), read-heavy `restaurant-service` menu lookups.
+
+---
+
+## 13. Observability
+
+- **Tracing:** Micrometer Tracing (Brave) exports spans to Zipkin from every service. Trace IDs
+  propagate across both REST (Feign) and RabbitMQ hops so a full order flow is visible as one
+  trace.
+- **Logging:** structured JSON to stdout only (factor 11). Logstash tails container output and
+  ships to Elasticsearch; Kibana is the query/dashboard layer. No service configures a direct
+  network log appender — that would couple application code to Logstash's location and violate
+  factor 11. Micrometer Tracing populates the trace/span ID into MDC automatically, so every log
+  line is correlated to a trace with no manual wiring per service.
+- **Metrics:** every service exposes Actuator (`/actuator/health`, `/actuator/metrics`,
+  `/actuator/circuitbreakers`, `/actuator/prometheus` via the Micrometer Prometheus registry).
+- **Visualization:** Prometheus scrapes every service's `/actuator/prometheus` endpoint; Grafana
+  sits on top as the dashboard layer (request rates, latency, JVM/DB pool metrics, circuit-breaker
+  states). This is added once the core system — services, gateway, messaging, tracing, logging —
+  is functioning end to end; it is the last piece of the observability stack, not a prerequisite
+  for the others (see Sprint 9 in `SPRINTS.md`).
+- One correlation ID, three places: the same trace ID appears in Zipkin, in every Kibana log line
+  for that request, and in the `traceId` field of any error response the request produced (§14).
+  Nobody should ever need to guess which log lines belong to which failed request. Prometheus/
+  Grafana metrics are aggregate, not per-request, so they complement this correlation rather than
+  participating in it — a dashboard tells you *that* latency spiked, a trace tells you *which*
+  request and why.
+
+---
+
+## 14. API error contract & exception handling
+
+- Every service returns errors in one shared envelope shape — `timestamp`, `status`, `error`
+  (machine-readable code), `message` (human-readable), `path`, `traceId`, and an optional
+  `errors[]` array of `{field, message}` for validation failures. No service invents its own
+  shape.
+- **Exception taxonomy:**
+  - **Unchecked `DomainException` and its subtypes** (`ResourceNotFoundException`,
+    `BusinessRuleViolationException`, `ConflictException`, …) are the default for anything raised
+    from business/service logic. Each subtype declares its own HTTP status and machine error code
+    (e.g. by implementing a small `ApiError { HttpStatus status(); String code(); }` contract) so
+    the global handler maps it generically instead of hardcoding a growing if/else chain.
+  - **Checked exceptions are reserved narrowly** — only where forcing the caller to acknowledge
+    failure at compile time earns its keep, e.g. a Feign fallback method's declared failure mode,
+    or a message-listener boundary where an explicit `throws` documents an expected failure path.
+    Everywhere else, prefer unchecked: Spring's exception translation, `@Transactional`'s
+    rollback-on-unchecked default, and `@RestControllerAdvice` are all built around unchecked
+    propagation, and a checked exception silently skips transaction rollback unless `rollbackFor`
+    is added explicitly. Treat "should this be checked?" as a deliberate choice per exception
+    type, not a default.
+  - The same global handler also translates framework exceptions into the shared envelope: Bean
+    Validation (`MethodArgumentNotValidException`, `ConstraintViolationException`, see §15), Feign
+    (`FeignException` and subclasses), Resilience4j (`CallNotPermittedException` for an open
+    circuit), and an unmapped catch-all `Exception` → `500` with a sanitized message. The full
+    stack trace is logged server-side with the trace ID attached; it is never returned to the
+    client.
+- **Implementation:** one `@RestControllerAdvice` per service, built on shared base types
+  (`DomainException` hierarchy + the `ApiErrorResponse` DTO + a small status-mapping helper) that
+  live in `common` — this is cross-cutting infrastructure, not domain code, so it doesn't conflict
+  with the `common` module rule in §3.
+- Every error response carries the current distributed trace ID in `traceId` (§13), so a
+  client-reported failure can be looked up directly in Zipkin/Kibana without asking when it
+  happened.
+
+---
+
+## 15. Validation
+
+- All request DTOs are validated with Jakarta Bean Validation (`spring-boot-starter-validation`,
+  backed by Hibernate Validator) — `@NotNull`, `@NotBlank`, `@Size`, `@Positive`, `@Email`, and
+  custom `@Constraint` validators for domain-shaped rules (e.g. a valid delivery-address format).
+- Validation is triggered declaratively, not by hand: `@Valid` on `@RequestBody` parameters,
+  `@Validated` at controller class level for `@RequestParam`/`@PathVariable`. A service must never
+  hand-roll a null/blank check that Bean Validation already expresses.
+- A `ConstraintValidator` stays side-effect-free — no DB lookups, no Feign calls. Anything needing
+  state (`restaurant ID must exist`, `menu item must belong to this restaurant`) is not a bean
+  constraint; it's a domain rule enforced in the service layer, raised as a `DomainException`, and
+  handled per §14.
+- Validation failures are translated into the shared error envelope by the same global exception
+  handler, with one `errors[]` entry per invalid field — a client gets every violation in one
+  response, not one-at-a-time.
+
+---
+
+## 16. Cross-cutting concerns (AOP)
+
+- Prefer Spring's existing AOP-based mechanisms before reaching for a custom `@Aspect`:
+  `@RestControllerAdvice` for exception translation (§14), `@Valid`/`@Validated` for validation
+  (§15), and Micrometer Tracing's automatic instrumentation for trace/span propagation (§13) are
+  themselves proxy-based cross-cutting mechanisms — they cover most of what a hand-written aspect
+  would otherwise duplicate.
+- Custom `@Aspect`s are for concerns Spring doesn't already provide: method-level audit/performance
+  logging, permission-check logging, idempotency-key enforcement on RabbitMQ listener methods.
+  They live in each service's own `aop` package. Promote one to a shared `common` starter only
+  once an identical aspect is duplicated in three or more services — don't pre-abstract.
+- A logging/audit aspect enriches its output with the active trace ID already in MDC (populated
+  automatically by Micrometer Tracing) rather than minting its own correlation ID — one
+  correlation ID per request, used everywhere: logs, traces, and error responses.
+- Aspects log and rethrow; they never catch an exception to log it and then swallow it. Translating
+  an exception into an HTTP response is the global handler's job (§14), not an aspect's.
+
+---
+
+## 17. Documentation
+
+Beyond this file, `SPRINTS.md`, and `ReadMe.md`, every service and every technology/tool decided
+in this document gets its own short reference doc — one file per item, not a shared wall of text.
+
+- **`docs/services/<service-name>.md`** — one per row in the §2 service inventory. Covers:
+  responsibility, why it's a separate service (boundary rationale), its database, its planned API
+  surface, what it depends on / what depends on it (§6), and which sprint delivers it.
+- **`docs/technologies/<tool-name>.md`** — one per technology/tool named anywhere in this file
+  (Postgres, MongoDB, RabbitMQ, Redis, Flyway, JWT, Resilience4j, Eureka, Spring Cloud Config,
+  Spring Cloud Gateway, Zipkin, Elasticsearch, Logstash, Kibana, Prometheus, Grafana,
+  Testcontainers, Jib, Docker, Bean Validation, Spring AOP, GitHub Actions). Covers: what it is,
+  *why* FDP uses it (tied to a concrete need, not a generic selling point), *where* it's used
+  (which service(s), which sprint introduces it), and *how* it's implemented here (starter/
+  dependency name, config keys, container/port if it's infra).
+- These docs explain a decision already made in this file or `SPRINTS.md` — they don't make new
+  ones. If a tech doc and this file disagree, this file wins and the tech doc is wrong; fix the
+  tech doc.
+- A sprint that introduces a new service or a new piece of technology ships that service's or
+  technology's doc in the same PR — documentation is not a separate, deferred pass.
+
+---
+
+## 18. Non-goals right now
+
+This repository is at the **planning stage**. This rules file, `SPRINTS.md`, and the per-service/
+per-technology reference docs under `docs/services/` and `docs/technologies/` (§17) are the only
+expected deliverables until sprint execution begins — do not scaffold service modules, write
+Dockerfiles, or stand up `docker-compose.yml` unless a sprint explicitly calls for it.
