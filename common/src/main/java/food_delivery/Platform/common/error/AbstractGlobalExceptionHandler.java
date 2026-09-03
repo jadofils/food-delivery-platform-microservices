@@ -56,10 +56,22 @@ public abstract class AbstractGlobalExceptionHandler {
 
 	private static final Logger log = LoggerFactory.getLogger(AbstractGlobalExceptionHandler.class);
 
-	/** Most specific: a business/service-layer failure this codebase raised on purpose. */
+	/**
+	 * Most specific: a business/service-layer failure this codebase raised on purpose. Logged at
+	 * {@code ERROR} for a {@link ServerErrorException} (our side needs attention) and at
+	 * {@code DEBUG} for a {@link ClientErrorException} (expected, frequent, not actionable
+	 * operationally — logging every 404 as an error would drown out the logs that matter).
+	 */
 	@ExceptionHandler(DomainException.class)
 	public ResponseEntity<ApiErrorResponse> handleDomainException(DomainException ex, HttpServletRequest request) {
-		ApiErrorResponse body = ApiErrorResponse.of(ex, ex.getMessage(), request.getRequestURI(), traceId());
+		String traceId = traceId();
+		if (ex instanceof ServerErrorException) {
+			log.error("Domain exception [{}] on {} [traceId={}]", ex.code(), request.getRequestURI(), traceId, ex);
+		} else {
+			log.debug("Domain exception [{}] on {} [traceId={}]: {}", ex.code(), request.getRequestURI(), traceId,
+					ex.getMessage());
+		}
+		ApiErrorResponse body = ApiErrorResponse.of(ex, ex.getMessage(), request.getRequestURI(), traceId);
 		return ResponseEntity.status(ex.status()).body(body);
 	}
 

@@ -5,27 +5,17 @@ package food_delivery.Platform.common.error;
  * see {@code ApiErrorResponse#ofValidation} for that case). Maps to
  * {@code 422 Unprocessable Entity}. See docs/RULES.md §14.
  */
-public class BusinessRuleViolationException extends DomainException {
+public class BusinessRuleViolationException extends ClientErrorException {
 
-	private static final String CODE = "BUSINESS_RULE_VIOLATION";
 	private static final int STATUS = 422;
+	private static final String CODE = "BUSINESS_RULE_VIOLATION";
 
 	public BusinessRuleViolationException(String message) {
-		super(message);
+		super(message, STATUS, CODE);
 	}
 
 	public BusinessRuleViolationException(String message, Throwable cause) {
-		super(message, cause);
-	}
-
-	@Override
-	public int status() {
-		return STATUS;
-	}
-
-	@Override
-	public String code() {
-		return CODE;
+		super(message, cause, STATUS, CODE);
 	}
 
 }

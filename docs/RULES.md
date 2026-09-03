@@ -317,12 +317,20 @@ class to a single service — the fan-out above is exactly why.
   `errors[]` array of `{field, message}` for validation failures. No service invents its own
   shape.
 - **Exception taxonomy:**
-  - **Unchecked `DomainException` and its subtypes** (`ResourceNotFoundException`,
-    `BusinessRuleViolationException`, `ConflictException`, …) are the default for anything raised
-    from business/service logic. Each subtype implements the shared `ApiError { int status();
-    String code(); }` contract (a plain `int`, not Spring Web's `HttpStatus` — see the
-    implementation note below) so the global handler maps it generically instead of hardcoding a
-    growing if/else chain.
+  - **Unchecked `DomainException`** is the default for anything raised from business/service
+    logic, and splits into two families covering every 4xx/5xx a service is realistically expected
+    to raise — not 1xx/2xx/3xx, which are never thrown (2xx is a normal return value, 1xx is
+    protocol-level, 3xx has no real place in a JSON API). `ClientErrorException` (the request is
+    the problem — `BadRequestException` 400 through `TooManyRequestsException` 429) and
+    `ServerErrorException` (this service or a dependency is the problem — `InternalServerException`
+    500 through `GatewayTimeoutException` 504); the full, current list is documented once, in
+    `common`'s `error` package-info, not duplicated here. Each subtype implements the shared
+    `ApiError { int status(); String code(); }` contract (a plain `int`, not Spring Web's
+    `HttpStatus` — see the implementation note below) so the global handler maps it generically
+    instead of hardcoding a growing if/else chain, and the client/server split lets that same
+    handler log a `ClientErrorException` at `DEBUG` (expected, frequent, not our bug) and a
+    `ServerErrorException` at `ERROR` (our side needs attention) without special-casing every
+    individual subtype.
   - **Checked exceptions are reserved narrowly** — only where forcing the caller to acknowledge
     failure at compile time earns its keep, e.g. a Feign fallback method's declared failure mode,
     or a message-listener boundary where an explicit `throws` documents an expected failure path.
