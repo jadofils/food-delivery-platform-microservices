@@ -32,10 +32,11 @@ merged.
 - `docker-compose.yml` skeleton: Postgres, MongoDB, RabbitMQ, Redis containers only — no services
   yet.
 - `common` module scaffolded with the shared cross-cutting baseline every service will build on
-  (`RULES.md` §14–§16): the `DomainException` hierarchy, `ApiErrorResponse` DTO, and a
-  `spring-boot-starter-validation` baseline dependency — so every service gets consistent global
-  error handling and DTO validation from its first controller, instead of each one improvising its
-  own later.
+  (`RULES.md` §14–§16): the `DomainException` hierarchy, `ApiErrorResponse` DTO,
+  `AbstractGlobalExceptionHandler` (the shared `@ExceptionHandler` methods a service's own
+  `@RestControllerAdvice` extends), and a `spring-boot-starter-validation` baseline dependency —
+  so every service gets consistent global error handling and DTO validation from its first
+  controller, instead of each one improvising its own later.
 
 **Exit criteria:** `main` is protected, `docker-compose up` starts the four infra containers, a
 trivial PR against any module demonstrates the CI gate + auto-merge working end to end, and the

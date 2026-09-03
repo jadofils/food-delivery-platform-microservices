@@ -319,9 +319,10 @@ class to a single service — the fan-out above is exactly why.
 - **Exception taxonomy:**
   - **Unchecked `DomainException` and its subtypes** (`ResourceNotFoundException`,
     `BusinessRuleViolationException`, `ConflictException`, …) are the default for anything raised
-    from business/service logic. Each subtype declares its own HTTP status and machine error code
-    (e.g. by implementing a small `ApiError { HttpStatus status(); String code(); }` contract) so
-    the global handler maps it generically instead of hardcoding a growing if/else chain.
+    from business/service logic. Each subtype implements the shared `ApiError { int status();
+    String code(); }` contract (a plain `int`, not Spring Web's `HttpStatus` — see the
+    implementation note below) so the global handler maps it generically instead of hardcoding a
+    growing if/else chain.
   - **Checked exceptions are reserved narrowly** — only where forcing the caller to acknowledge
     failure at compile time earns its keep, e.g. a Feign fallback method's declared failure mode,
     or a message-listener boundary where an explicit `throws` documents an expected failure path.
@@ -336,10 +337,26 @@ class to a single service — the fan-out above is exactly why.
     circuit), and an unmapped catch-all `Exception` → `500` with a sanitized message. The full
     stack trace is logged server-side with the trace ID attached; it is never returned to the
     client.
-- **Implementation:** one `@RestControllerAdvice` per service, built on shared base types
-  (`DomainException` hierarchy + the `ApiErrorResponse` DTO + a small status-mapping helper) that
-  live in `common` — this is cross-cutting infrastructure, not domain code, so it doesn't conflict
-  with the `common` module rule in §3.
+- **Implementation:** one `@RestControllerAdvice` per service, built on shared base types that
+  live in `common`'s `error` package (`DomainException` hierarchy, `ApiErrorResponse` DTO with
+  `of`/`ofValidation`/`ofUnexpected` factory methods) — cross-cutting infrastructure, not domain
+  code, so it doesn't conflict with the `common` module rule in §3.
+  - `common` also provides `AbstractGlobalExceptionHandler`, a base class carrying the
+    `@ExceptionHandler` methods for `DomainException`, `MethodArgumentNotValidException`,
+    `ConstraintViolationException`, and the `Exception` catch-all. A service wires it in by
+    extending it from its own `@RestControllerAdvice`-annotated class, adding only what that
+    service needs beyond the shared set (e.g. `FeignException`/`CallNotPermittedException` for a
+    service that makes outbound calls — not in the shared base, since not every service does).
+  - This base targets the Servlet (Spring MVC) stack, used by every service except
+    `api-gateway`, which is WebFlux and defines its own `ServerWebExchange`-flavored advice — but
+    reuses the same `ApiError`/`DomainException`/`ApiErrorResponse` types, since those stay
+    stack-agnostic on purpose.
+  - **Ordering.** Dispatch order *within* one advice bean is automatic — Spring always picks the
+    most specific declared handler for the thrown exception's actual type, regardless of method
+    declaration order; nothing to configure. Precedence *across two separate* advice beans in the
+    same service is not automatic and needs `@Order` on each advice class if that situation ever
+    arises — it doesn't today, since each service has exactly one advice bean, inheriting
+    everything from the shared base.
 - Every error response carries the current distributed trace ID in `traceId` (§13), so a
   client-reported failure can be looked up directly in Zipkin/Kibana without asking when it
   happened.
