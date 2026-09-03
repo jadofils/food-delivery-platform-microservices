@@ -42,6 +42,7 @@ CLAUDE.md
 .env
 .env.*
 *.env
+!.env.example
 **/application-secrets.yml
 **/application-secrets.yaml
 **/application-local.yml

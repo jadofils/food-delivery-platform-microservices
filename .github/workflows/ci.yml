@@ -1,0 +1,48 @@
+# Sprint 0 baseline CI (SPRINTS.md Sprint 0, RULES.md §11): one reactor-wide build+test on every
+# PR into main. This is the required check branch protection gates auto-merge on — see the note
+# at the bottom of this file for what still needs to be turned on in GitHub's repo settings.
+#
+# Sprint 7 "finalizes" this per RULES.md §11 into one path-filtered workflow per service, so only
+# the services actually touched by a change get rebuilt. Until then, every PR builds and tests the
+# whole reactor — correct, just not yet optimized for build time as the module count grows.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build and test (full reactor)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Make mvnw executable
+        run: chmod +x mvnw
+
+      # `verify` rather than `test` on purpose: later sprints add Testcontainers-backed
+      # integration tests (RULES.md §9) bound to the verify phase (e.g. via failsafe, *IT.java
+      # naming) — this command already picks those up with no workflow change needed.
+      - name: Build and test full reactor
+        run: ./mvnw --batch-mode --no-transfer-progress verify
+
+# To finish Sprint 0's CI/CD item, in the GitHub repo's Settings → Branches → branch protection
+# rule for `main`:
+#   1. Require a pull request before merging.
+#   2. Require status checks to pass before merging — select "Build and test (full reactor)"
+#      (the job name above) once it has run at least once.
+#   3. Require branches to be up to date before merging.
+#   4. Enable "Allow auto-merge" in the repo's General settings, then use auto-merge on each PR
+#      so it merges itself the moment the required check goes green — no manual merge click.
+# None of this can be configured from a workflow file; it's a one-time manual (or `gh api`) step.
