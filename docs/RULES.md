@@ -83,11 +83,38 @@ fdp/
 └── .github/workflows/         # one workflow per service, path-filtered
 ```
 
-`common` may hold event payload classes (e.g. `OrderPlacedEvent`), the shared `DomainException`
-hierarchy and `ApiErrorResponse` DTO used by every service's global exception handler (§14), and
-JWT-claims parsing utilities. It must **never** hold a JPA `@Entity`, a `@Repository`, or
-anything that would let two services share a table. If a class in `common` starts accumulating
-service-specific logic, that's a sign it should move into the service that owns it.
+**`common` sits in the same Maven reactor as every service, so there's no version-drift problem —
+but there is a fan-out cost:** change a class in `common` and every dependent service needs
+rebuilding, retesting, and (for anything behavioral) redeploying together. §11's CI already
+path-filters a `common/**` change to trigger every dependent's pipeline because this cost is real.
+So the rule isn't "share what's reusable" — it's share only what breaks the system if it's allowed
+to drift, and keep everything else local even when that means duplication. Two questions settle it
+for any given class:
+
+1. Does the producer and every consumer have to agree on this, atomically, or the system is
+   broken (an event's wire shape, the error envelope)? → shared.
+2. Does one service clearly own this concept, with others only consuming a partial view of it? →
+   the owner keeps it local; each consumer defines its **own** minimal copy of just the fields it
+   needs. Duplication here is the point — it's what lets `restaurant-service` add a field to its
+   API response without forcing `order-service` to rebuild.
+
+| Belongs in `common` | Reason |
+|---|---|
+| Event payload DTOs (e.g. `OrderPlacedEvent`, `DeliveryStatusUpdatedEvent`) — data only, no behavior | Publisher and every consumer must agree on the wire shape or a deserialization mismatch ships silently |
+| The `DomainException` hierarchy and `ApiErrorResponse` DTO (§14) | The entire point of the shared error envelope is that all nine services return byte-identical shapes |
+| JWT permission-claims parser | One correct implementation of security-sensitive code beats nine slightly-different copies |
+| Shared header/MDC constant names (`X-Trace-Id`, `X-Correlation-Id`, the permission-claim key) | A typo in a literal string used by nine services is a real, dumb bug class worth one source of truth |
+
+| Stays a per-service copy | Reason |
+|---|---|
+| JPA `@Entity`/`@Repository` | Forbidden outright — sharing these recreates cross-service DB coupling even with separate databases |
+| **Feign client interfaces** (e.g. `RestaurantServiceClient`) | If `common` owns it, `restaurant-service` can't change its own API without every consumer picking up a `common` change. The Feign client belongs to the **caller** — see §6 |
+| REST response DTOs consumed via a Feign client | The caller should declare only the fields it actually uses; an unrelated field added by the producer shouldn't force a rebuild |
+| Any domain/business logic, validators, or service classes | Not cross-cutting by definition — it belongs to whichever service owns that rule |
+
+If a class in `common` starts accumulating service-specific logic, that's a sign it should move
+into the service that owns it. Treat every addition to `common` as a bigger decision than adding a
+class to a single service — the fan-out above is exactly why.
 
 ---
 
@@ -136,7 +163,9 @@ service-specific logic, that's a sign it should move into the service that owns 
   proceed — e.g. `order-service` validating a menu item's price with `restaurant-service` before
   accepting an order. Every Feign client is wrapped in a Resilience4j circuit breaker with an
   explicit fallback (see [§7](#7-resilience)). Synchronous calls always go through Eureka
-  (`lb://restaurant-service`), never a hardcoded host.
+  (`lb://restaurant-service`), never a hardcoded host. The Feign client interface and the response
+  DTO it deserializes into live in the **calling** service (`order-service` owns its own view of
+  "what I need from `restaurant-service`"), never in `common` — see §3's shared-vs-local table.
 - **Asynchronous (RabbitMQ):** used for anything the caller doesn't need to wait on — delivery
   assignment, notifications, audit trail. Domain events are published to topic exchanges, named
   `<Entity><PastTenseVerb>Event` (`OrderPlacedEvent`, `OrderCancelledEvent`,
