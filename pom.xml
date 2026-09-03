@@ -52,4 +52,29 @@
 		<module>notification-service</module>
 	</modules>
 
+	<!--
+		pluginManagement only, not plugins, so nothing here is force-applied to a module that
+		doesn't declare the plugin itself. This exists so a service that adds the (optional)
+		Lombok dependency for its JPA entities gets working annotation processing without every
+		such service repeating this same XML block.
+	-->
+	<build>
+		<pluginManagement>
+			<plugins>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-compiler-plugin</artifactId>
+					<configuration>
+						<annotationProcessorPaths>
+							<path>
+								<groupId>org.projectlombok</groupId>
+								<artifactId>lombok</artifactId>
+							</path>
+						</annotationProcessorPaths>
+					</configuration>
+				</plugin>
+			</plugins>
+		</pluginManagement>
+	</build>
+
 </project>

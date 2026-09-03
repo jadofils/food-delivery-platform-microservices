@@ -14,13 +14,98 @@
 	<description>FDP users, roles, permissions (RBAC), JWT issuance. See docs/services/identity-service.md.</description>
 
 	<dependencies>
+		<!-- Shared error-handling kernel: DomainException hierarchy, ApiErrorResponse, AbstractGlobalExceptionHandler -->
+		<dependency>
+			<groupId>food-delivery.Platform</groupId>
+			<artifactId>common</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter</artifactId>
+			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-jpa</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-validation</artifactId>
+		</dependency>
+
+		<!-- Password hashing only, not the full spring-boot-starter-security auto-configuration.
+			 Full Spring Security + JWT resource-server config lands with token issuance, later. -->
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-crypto</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>org.postgresql</groupId>
+			<artifactId>postgresql</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<!-- Boot 4 moved Flyway's autoconfiguration out of the monolithic autoconfigure jar into
+			 its own module, mirroring the webmvc-test/hibernate splits -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-flyway</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-core</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+
+		<!-- OpenAPI 3 spec + Swagger UI, generated from the controllers -->
+		<dependency>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+			<version>3.1.0</version>
+		</dependency>
+
+		<!-- JPA entities can't be records; Lombok removes their getter/setter boilerplate.
+			 DTOs stay plain Java records (see dto package); Lombok is for entities only. -->
+		<dependency>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+			<optional>true</optional>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- Boot 4 split MockMvc test support out of spring-boot-test-autoconfigure into its own
+			 module, mirroring the webmvc/webflux starter split -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-webmvc-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- @ServiceConnection support: a @Testcontainers Postgres container auto-wires the
+			 datasource with no manual @DynamicPropertySource. Versions come from the Spring Boot
+			 BOM inherited via the parent, not pinned here. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-testcontainers</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- Testcontainers 2.x renamed these from the 1.x-era "junit-jupiter"/"postgresql" -->
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-postgresql</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
@@ -30,6 +115,12 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+			<!-- No <configuration> here; inherited from the root aggregator's pluginManagement,
+				 which wires Lombok as an annotation processor. -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
 			</plugin>
 		</plugins>
 	</build>
