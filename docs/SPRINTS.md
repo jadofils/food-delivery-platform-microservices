@@ -53,8 +53,17 @@ trivial PR against any module demonstrates the CI gate + auto-merge working end 
 codec. That was retired in favor of Keycloak (`docs/decisions/0001-retire-identity-service-for-keycloak.md`);
 the bullets below describe what actually ships now, not the original plan.
 
-- `discovery-server` (Eureka) stood up, dashboard reachable at `:8761`.
-- `config-server` stood up serving externalized config to registered clients.
+- `discovery-server` (Eureka) stood up, dashboard reachable at `:8761`. **Done and verified
+  live:** `@EnableEurekaServer`, standalone mode (`register-with-eureka=false`,
+  `fetch-registry=false` — it's the registry, not a client of itself), dashboard and
+  `/actuator/health` both confirmed responding, correctly showing "No instances available" until
+  a real client exists (`customer-service`, Sprint 2). Required pulling `spring-cloud-dependencies`
+  into the root aggregator's `dependencyManagement` for the first time (RULES.md §4) — see the
+  version note directly in `pom.xml`: no Spring Cloud release is binary-compatible with Boot
+  4.1.1 yet (even the newest milestone references a Boot package path that moved in 4.1), so this
+  runs on a Spring Cloud snapshot as a deliberate, documented, temporary compromise.
+- `config-server` stood up serving externalized config to registered clients. *(Not yet
+  implemented — same sprint, next.)*
 - **Keycloak** (RULES.md §8) stood up as the platform's identity provider:
   - `docker-compose.yml` service `keycloak`, its own `keycloak_db` schema in the shared Postgres
     (FDP's Flyway migrations never touch it).

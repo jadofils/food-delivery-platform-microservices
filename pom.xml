@@ -30,6 +30,17 @@
 
 	<properties>
 		<java.version>25</java.version>
+		<!-- No Spring Cloud release (not even the 2025.0.0-RC1 milestone) is binary-compatible
+			 with Boot 4.1.1 yet: 2025.0.0-RC1 still references a pre-4.1 Boot package path
+			 (org.springframework.boot.web.context.WebServerInitializedEvent, moved to
+			 org.springframework.boot.web.server.context in 4.1) and fails at context startup with
+			 a NoClassDefFoundError. The 2025.1.x snapshot train (actively updated, checked the same
+			 day as this comment) targets Boot 4.1.x specifically and does not hit this. Using a
+			 SNAPSHOT is a deliberate, documented compromise for a genuinely unreleased-yet
+			 combination, not the norm (RULES.md §1 factor 5 wants immutable, reproducible builds):
+			 pin this to a real RC/GA the moment Spring Cloud publishes one compatible with Boot
+			 4.1.1, and drop the snapshot repository below along with it. -->
+		<spring-cloud.version>2025.1.4-SNAPSHOT</spring-cloud.version>
 	</properties>
 
 	<!--
@@ -39,6 +50,38 @@
 		such as spring-cloud-dependencies); each service's own pom.xml declares the actual
 		dependencies it uses.
 	-->
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.springframework.cloud</groupId>
+				<artifactId>spring-cloud-dependencies</artifactId>
+				<version>${spring-cloud.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
+	<repositories>
+		<repository>
+			<id>spring-milestones</id>
+			<name>Spring Milestones</name>
+			<url>https://repo.spring.io/milestone</url>
+			<snapshots>
+				<enabled>false</enabled>
+			</snapshots>
+		</repository>
+		<!-- Remove this the same day spring-cloud.version above stops being a SNAPSHOT -->
+		<repository>
+			<id>spring-snapshots</id>
+			<name>Spring Snapshots</name>
+			<url>https://repo.spring.io/snapshot</url>
+			<releases>
+				<enabled>false</enabled>
+			</releases>
+		</repository>
+	</repositories>
+
 	<modules>
 		<module>common</module>
 		<module>config-server</module>

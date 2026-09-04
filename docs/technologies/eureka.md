@@ -31,6 +31,18 @@ host/port.
 ## How it's implemented in FDP
 - `discovery-server` module: `spring-cloud-starter-netflix-eureka-server` dependency, annotated
   with `@EnableEurekaServer`, dashboard reachable at port `8761` (RULES.md §2; SPRINTS.md Sprint 1).
+  Standalone mode — `eureka.client.register-with-eureka=false` and `fetch-registry=false`, since
+  this instance *is* the registry, not a client of itself. Verified live: dashboard and
+  `/actuator/health` both respond, correctly showing "No instances available" until a real client
+  exists.
+- **Version note, relevant to every future service that adds the Eureka *client* starter too:**
+  no released Spring Cloud train is binary-compatible with Boot 4.1.1 yet — even the newest
+  milestone (`2025.0.0-RC1`) still references a Boot package path
+  (`org.springframework.boot.web.context.WebServerInitializedEvent`) that moved in Boot 4.1
+  (to `org.springframework.boot.web.server.context`), and fails at context startup with a
+  `NoClassDefFoundError`. The root aggregator's `spring-cloud.version` is pinned to a `2025.1.x`
+  snapshot instead — see the version note directly in the root `pom.xml` for why, and bump it to
+  a real release (dropping the snapshot repository alongside it) the moment one exists.
 - Every other service (all eight, per RULES.md §2 service inventory) depends on
   `spring-cloud-starter-netflix-eureka-client` and registers with `discovery-server` on startup.
 - `api-gateway` route definitions use `lb://<service-name>` URIs resolved through Eureka rather
