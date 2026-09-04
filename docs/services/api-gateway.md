@@ -25,7 +25,7 @@ Not a domain API — it is a routing and security edge:
   `/api/deliveries/**` (added Sprint 5) to their respective backend services via Eureka `lb://`
   URIs (RULES.md §6, SPRINTS.md Sprint 4 and Sprint 5).
 - JWT validation filter at the edge: verifies signature, expiry, and issuer against
-  `identity-service`'s JWKS before routing any request through (RULES.md §8).
+  Keycloak's JWKS before routing any request through (RULES.md §8).
 - Redis-backed `RequestRateLimiter` applied to the order-placement route (RULES.md §12,
   SPRINTS.md Sprint 4).
 - Ties to ReadMe.md Epic 3, user story 3.2 (single entry point, centralized routing,
@@ -33,7 +33,7 @@ Not a domain API — it is a routing and security edge:
 
 ## Depends on / depended on by
 - **Depends on:** `discovery-server` (Eureka, to resolve `lb://` targets), `config-server` (its
-  own externalized config), `identity-service`'s JWKS endpoint (to validate JWT signatures at the
+  own externalized config), Keycloak's JWKS endpoint (to validate JWT signatures at the
   edge, RULES.md §8), and Redis (rate-limit counters, RULES.md §12). It has no Feign clients of
   its own and publishes/consumes no RabbitMQ events.
 - **Depended on by:** every external client (browser, Postman) — it is the sole entry point per
@@ -48,7 +48,7 @@ route is added incrementally in Sprint 5 once `delivery-service` exists.
 ## Related
 - RULES.md §6 (Communication rules), §8 (Security), §12 (Caching/Redis)
 - SPRINTS.md — Sprint 4, Sprint 5
-- [`./identity-service.md`](./identity-service.md) — sole JWT issuer and JWKS source the gateway
-  validates against
+- [`../technologies/keycloak.md`](../technologies/keycloak.md) — sole JWT issuer and JWKS source
+  the gateway validates against
 - [`./discovery-server.md`](./discovery-server.md) — service registry the gateway resolves routes
   through

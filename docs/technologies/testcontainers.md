@@ -23,7 +23,6 @@ actual dependency rather than a substitute.
 
 | Service/module | Backing service under test | Sprint introduced |
 |---|---|---|
-| `identity-service` | Postgres (`identity_db`) | Sprint 1 |
 | `customer-service` | Postgres (`customer_db`) | Sprint 2 |
 | `restaurant-service` | Postgres (`restaurant_db`) | Sprint 2 |
 | `order-service` | Postgres (`order_db`) | Sprint 3 |
@@ -49,6 +48,5 @@ required check; this is present from each service's first CI pipeline, not defer
 
 ## Related
 - RULES.md §9, RULES.md §11, RULES.md §1 factor 10
-- SPRINTS.md Sprint 1 (`identity-service` CI pipeline with Testcontainers Postgres), Sprint 2,
-  Sprint 3, Sprint 5
+- SPRINTS.md Sprint 2, Sprint 3, Sprint 5
 - `./github-actions.md`, `./docker.md`

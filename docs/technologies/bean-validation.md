@@ -25,8 +25,8 @@ validate request DTOs.
 | Service/module | Sprint introduced |
 |---|---|
 | `common` (`spring-boot-starter-validation` baseline dependency) | Sprint 0 |
-| Every service exposing request DTOs (`identity-service`, `customer-service`,
-  `restaurant-service`, `order-service`, `delivery-service`, `notification-service`) | Per-service, from its first controller |
+| Every service exposing request DTOs (`customer-service`, `restaurant-service`, `order-service`,
+  `delivery-service`, `notification-service`) | Per-service, from its first controller |
 
 ## How it's implemented in FDP
 - `spring-boot-starter-validation` (Hibernate Validator) is scaffolded once as a baseline

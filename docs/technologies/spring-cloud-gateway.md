@@ -11,7 +11,7 @@ header rewriting), and forwards the request to a resolved backend.
   Epic 3, user story 3.2).
 - JWT validation must happen once, at the edge, before routing — `api-gateway` validates every
   inbound token's signature, expiry, and issuer so downstream services can authorize locally off
-  embedded claims without a network call back to `identity-service` (RULES.md §8).
+  embedded claims without a network call back to Keycloak (RULES.md §8).
 - Order placement needs centralized rate limiting to protect the system from bursty traffic on a
   high-traffic write path — this is the gateway's `RequestRateLimiter`, backed by Redis (RULES.md
   §4, §12).
@@ -36,7 +36,7 @@ header rewriting), and forwards the request to a resolved backend.
   - `/api/deliveries/**` → `lb://delivery-service` (added in Sprint 5)
   (RULES.md §2, §6; SPRINTS.md Sprint 4 and Sprint 5)
 - A JWT validation filter (custom `GatewayFilter`) checks signature, expiry, and issuer against
-  `identity-service`'s JWKS endpoint before a request is routed (RULES.md §8; SPRINTS.md Sprint 4).
+  Keycloak's JWKS endpoint before a request is routed (RULES.md §8; SPRINTS.md Sprint 4).
 - `RequestRateLimiter` filter backed by Redis is applied on the order-placement route, using
   namespaced cache keys (e.g. `gateway:rate-limit:{clientId}`) per the shared-Redis-instance
   convention (RULES.md §12; SPRINTS.md Sprint 4).

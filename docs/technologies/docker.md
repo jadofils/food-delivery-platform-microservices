@@ -13,7 +13,7 @@ which is the separate, CI-driven image-build path (see `./jib.md`).
 - A hand-written multi-stage `Dockerfile` per service is maintained deliberately, alongside Jib, for
   learning purposes and for anyone who wants to `docker build` a service manually without Maven —
   it is not what CI runs (RULES.md §10).
-- `docker-compose.yml` is the single command that starts the complete system — all nine services
+- `docker-compose.yml` is the single command that starts the complete system — all eight services
   plus every backing infrastructure container — which is the concrete deliverable Sprint 7 and the
   base assignment (`ReadMe.md` Epic 2) both require (RULES.md §10; SPRINTS.md Sprint 7; `ReadMe.md`
   Epic 2).
@@ -27,7 +27,7 @@ which is the separate, CI-driven image-build path (see `./jib.md`).
 | Service/module | Sprint introduced |
 |---|---|
 | `docker-compose.yml` skeleton (Postgres, MongoDB, RabbitMQ, Redis only, no services) | Sprint 0 |
-| Multi-stage `Dockerfile` + `.dockerignore` per service; full `docker-compose.yml` (all nine services + all infra, health checks, `depends_on` ordering); `application-docker.yml` per service | Sprint 7 |
+| Multi-stage `Dockerfile` + `.dockerignore` per service; full `docker-compose.yml` (all eight services + all infra, health checks, `depends_on` ordering); `application-docker.yml` per service | Sprint 7 |
 
 ## How it's implemented in FDP
 - Each service's `Dockerfile` uses a build stage (compiles the Maven module) and a slim runtime
@@ -38,7 +38,7 @@ which is the separate, CI-driven image-build path (see `./jib.md`).
 - Each service ships an `application-docker.yml` profile using Docker service names for hostnames
   (e.g. `jdbc:postgresql://postgres:5432/order_db`) and environment variables for secrets, never a
   hardcoded `localhost` (RULES.md §10).
-- `docker-compose.yml` at the repo root defines all nine services from the §2 inventory plus
+- `docker-compose.yml` at the repo root defines all eight services from the §2 inventory plus
   Postgres, MongoDB, RabbitMQ, Redis, Zipkin, Elasticsearch, Logstash, Kibana, Prometheus, and
   Grafana (RULES.md §10, §13), with health checks and `depends_on: condition: service_healthy` on
   every container.

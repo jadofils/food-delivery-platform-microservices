@@ -25,7 +25,6 @@ configured as workflow files under `.github/workflows/`.
 | Service/module | Sprint introduced |
 |---|---|
 | Base workflow template (build + unit test on PR) and branch protection on `main` | Sprint 0 |
-| `identity-service` CI pipeline with Testcontainers Postgres | Sprint 1 |
 | `customer-service`, `restaurant-service` CI pipelines | Sprint 2 |
 | `order-service` CI pipeline (adds contract tests for Feign clients) | Sprint 3 |
 | `delivery-service`, `notification-service` CI pipelines | Sprint 5 |

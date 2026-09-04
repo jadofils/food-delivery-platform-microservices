@@ -23,7 +23,7 @@ the metrics.
 
 | Service/module | Sprint introduced |
 |---|---|
-| All nine services in the §2 inventory (source of `/actuator/prometheus` metrics, visualized in Grafana) | Sprint 9 |
+| All eight services in the §2 inventory (source of `/actuator/prometheus` metrics, visualized in Grafana) | Sprint 9 |
 | `docker-compose.yml` (`grafana` service, sitting on top of `prometheus`) | Sprint 9 |
 
 ## How it's implemented in FDP

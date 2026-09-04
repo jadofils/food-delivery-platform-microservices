@@ -18,14 +18,13 @@ for evolving each Postgres-backed service's schema.
 
 | Service | Migration path | Sprint introduced |
 |---|---|---|
-| `identity-service` | `src/main/resources/db/migration` | Sprint 1 |
 | `customer-service` | `src/main/resources/db/migration` | Sprint 2 |
 | `restaurant-service` | `src/main/resources/db/migration` | Sprint 2 |
 | `order-service` | `src/main/resources/db/migration` | Sprint 3 |
 | `delivery-service` | `src/main/resources/db/migration` | Sprint 5 |
 
-`identity-service`'s baseline Flyway migration is called out explicitly as part of Sprint 1's
-scope (SPRINTS.md, Sprint 1).
+Keycloak's own schema (`keycloak_db`, RULES.md §8) is explicitly **not** one of these — Keycloak
+manages it internally; no FDP Flyway migration ever touches it.
 
 ## How it's implemented in FDP
 - Every Postgres-backed service declares the `flyway-core` dependency in its own `pom.xml`

@@ -19,10 +19,10 @@ scrapes metrics from HTTP endpoints on a schedule rather than having application
 
 | Component | Role | Sprint |
 |---|---|---|
-| All nine services (RULES.md §2) | Expose `/actuator/prometheus` for Prometheus to scrape | Sprint 6 (endpoint exposed) / Sprint 9 (scraped) |
+| All eight services (RULES.md §2) | Expose `/actuator/prometheus` for Prometheus to scrape | Sprint 6 (endpoint exposed) / Sprint 9 (scraped) |
 | Prometheus itself | Added to `docker-compose.yml`, scrapes every service | Sprint 9 |
 
-Sprint 9 exit criteria (SPRINTS.md): dashboards sourced from Prometheus for all nine services,
+Sprint 9 exit criteria (SPRINTS.md): dashboards sourced from Prometheus for all eight services,
 "with no service needing code changes to be scraped (Actuator + Micrometer already expose
 everything Sprint 6 configured)."
 

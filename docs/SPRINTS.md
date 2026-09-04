@@ -18,7 +18,7 @@ merged.
 
 - Root aggregator `pom.xml`: `dependencyManagement` (Spring Boot BOM, Spring Cloud BOM), shared
   properties, module list.
-- Empty Spring Boot module skeletons for all nine services: `pom.xml` (`RULES.md` §4 — no
+- Empty Spring Boot module skeletons for all eight services: `pom.xml` (`RULES.md` §4 — no
   business dependencies yet), one empty `*Application` class, a
   `src/main/resources/application.properties` declaring just `spring.application.name`, and a
   `src/test/java/**/*ApplicationTests.java` with an empty `contextLoads()` test — the same four
@@ -48,41 +48,37 @@ trivial PR against any module demonstrates the CI gate + auto-merge working end 
 
 **Goal:** the platform's spine exists before any domain service needs to register with it.
 
+**Superseded scope note:** this sprint originally built a custom `identity-service` — its own
+`User`/`Role`/`Permission` schema, registration/login endpoints, and a hand-rolled nested-JWT
+codec. That was retired in favor of Keycloak (`docs/decisions/0001-retire-identity-service-for-keycloak.md`);
+the bullets below describe what actually ships now, not the original plan.
+
 - `discovery-server` (Eureka) stood up, dashboard reachable at `:8761`.
 - `config-server` stood up serving externalized config to registered clients.
-- `identity-service`: user registration/login, nested-JWT issuance (RS256 signed, then A256GCM
-  encrypted — `RULES.md` §8). `identity_db` with baseline Flyway migration. **Delivered ahead of
-  Eureka/Config Server registration below** — the signing/encryption keys are generated in memory
-  at startup for now, which is what makes JWKS distribution and cross-instance key sharing wait
-  on Config Server; that dependency is now concrete, not theoretical.
-- **Role & permission management (RBAC), scoped entirely to `identity-service`:**
-  - Schema: `User`, `Role`, `Permission`, `role_permissions`, `user_roles` — permissions are
-    fine-grained action strings (`order:create`, `restaurant:menu:write`,
-    `delivery:status:update`, …), never bare role names, so downstream services authorize on
-    capability, not identity.
-  - A Flyway migration seeds the baseline roles from `RULES.md` §8 (`CUSTOMER`,
-    `RESTAURANT_OWNER`, `DELIVERY_AGENT`, `ADMIN`) and their default permission grants, plus one
-    demo user per role so the system is usable immediately — see `credentials.md`.
-  - An admin CRUD API (itself gated behind an admin-only permission) to manage roles,
-    permissions, and role-permission assignments without a redeploy.
-  - JWT issuance embeds the caller's **permission** claims (not just role names) so every other
-    service can authorize locally and statelessly (`RULES.md` §8, factor 6) — no service calls
-    `identity-service` per request to ask "can this user do X."
-  - **Enforcement was built here too**, ahead of schedule, using the lightweight
-    `@Public`/`@RequiresPermission`/`PermissionInterceptor` pattern from `common` (`RULES.md` §8)
-    rather than Spring Security's `@PreAuthorize` — every `identity-service` endpoint except
-    `/api/v1/auth/*` now requires a valid, permission-checked token. Other services adopt the same
-    `common` pattern in their own sprint (Sprint 2 for `customer-`/`restaurant-service`, Sprint 3
-    for `order-service`, Sprint 5 for `delivery-`/`notification-service`). `api-gateway`
-    (Sprint 4) only authenticates the token at the edge; each service's own interceptor remains
-    the real enforcement point (defense in depth).
-- `identity-service` CI pipeline with Testcontainers Postgres.
+- **Keycloak** (RULES.md §8) stood up as the platform's identity provider:
+  - `docker-compose.yml` service `keycloak`, its own `keycloak_db` schema in the shared Postgres
+    (FDP's Flyway migrations never touch it).
+  - `fdp` realm, `fdp-api` client, and ten client roles matching FDP's permission strings
+    (`order:create`, `restaurant:menu:write`, `delivery:status:update`, …) — never bare role
+    names, so downstream services authorize on capability, not identity — all provisioned
+    automatically on first start via a realm-import file (`docker/keycloak/fdp-realm.json`).
+  - One demo user per baseline role (`CUSTOMER`, `RESTAURANT_OWNER`, `DELIVERY_AGENT`, `ADMIN`),
+    same file, so the system is usable immediately — see `credentials.md`.
+  - Verified live: every demo user can obtain a token from Keycloak's own token endpoint with
+    exactly the right client-role claims and nothing else; a wrong password is correctly rejected.
+- **Enforcement moves to native Spring Security**, not a `common`-owned custom filter/interceptor:
+  each service that validates tokens does so via `spring-boot-starter-oauth2-resource-server`
+  against Keycloak's real JWKS endpoint, with `@PreAuthorize` (or an equivalent
+  `SecurityFilterChain` rule) for permission checks. This lands in each service's own sprint
+  (Sprint 2 for `customer-`/`restaurant-service`, Sprint 3 for `order-service`, Sprint 5 for
+  `delivery-`/`notification-service`) — Sprint 1 only stands up Keycloak itself, it doesn't build
+  a service to validate against yet, since there's no `identity-service` anymore to have been
+  "first."
 
-**Exit criteria:** `identity-service` registers with Eureka and pulls config from `config-server`;
-a client can register, log in, and receive a valid nested JWT carrying permission claims; an admin
-can create a role, attach permissions to it, and assign it to a user entirely through
-`identity-service`'s own API; every non-`/auth` endpoint rejects a missing or insufficient token
-with the standard error envelope.
+**Exit criteria:** `discovery-server` and `config-server` are both reachable; Keycloak's `fdp`
+realm imports successfully from a clean `docker compose up`; each of the four demo accounts in
+`credentials.md` can obtain a token carrying exactly its role's permissions, confirmed against
+Keycloak's token endpoint directly (no FDP service required yet).
 
 ---
 
@@ -124,8 +120,8 @@ stopped.
 
 - `api-gateway`: routes `/api/customers/**`, `/api/restaurants/**`, `/api/orders/**` via Eureka
   load-balanced URIs.
-- JWT validation filter at the gateway (signature, expiry, issuer) using `identity-service`'s
-  JWKS.
+- JWT validation at the gateway (signature, expiry, issuer) via Spring Security's OAuth2
+  Resource Server, against Keycloak's real JWKS endpoint (RULES.md §8).
 - Redis stood up; `RequestRateLimiter` on order placement backed by Redis.
 - Downstream services add local JWT re-validation (defense-in-depth, per `RULES.md` §8).
 
@@ -177,7 +173,7 @@ touches, and its logs can be found in Kibana filtered by that trace ID.
 is production-shaped.
 
 - Multi-stage `Dockerfile` for every service; `.dockerignore` per service.
-- Full `docker-compose.yml`: all nine services + all infra, health checks, correct
+- Full `docker-compose.yml`: all eight services + all infra, health checks, correct
   `depends_on: condition: service_healthy` startup ordering.
 - `application-docker.yml` profile per service using container hostnames and env-injected
   secrets.
@@ -222,7 +218,7 @@ added last, deliberately, once the rest of the system is functioning end to end.
   to an individual request in Zipkin and its logs in Kibana (`RULES.md` §13's "one correlation ID,
   three places" plus this aggregate view).
 
-**Exit criteria:** Grafana shows live dashboards for all nine services sourced from Prometheus,
+**Exit criteria:** Grafana shows live dashboards for all eight services sourced from Prometheus,
 with no service needing code changes to be scraped (Actuator + Micrometer already expose
 everything Sprint 6 configured).
 
@@ -231,8 +227,8 @@ everything Sprint 6 configured).
 ## Sequencing notes
 
 - Sprints 0–1 are a hard prerequisite for everything else — no domain service should be started
-  before `discovery-server`/`config-server`/`identity-service` exist, or it'll be retrofitted
-  later at real cost.
+  before `discovery-server`/`config-server`/Keycloak exist, or it'll be retrofitted later at real
+  cost.
 - Sprints 2–5 build the domain services in dependency order (`order-service` needs `customer-` and
   `restaurant-service` to exist first; `delivery-` and `notification-service` need `order-service`
   publishing events first).

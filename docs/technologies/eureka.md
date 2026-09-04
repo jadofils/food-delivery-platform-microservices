@@ -7,7 +7,7 @@ services' Feign clients) look up healthy instances by logical service name inste
 host/port.
 
 ## Why FDP uses it
-- FDP is nine independently deployable services (RULES.md §2); none of them can hardcode where its
+- FDP is eight independently deployable services (RULES.md §2); none of them can hardcode where its
   peers live without violating factor 4 (backing services reachable only via config) and factor 8
   (scale by running more stateless instances) — Eureka is what makes `lb://` logical addressing
   possible (RULES.md §1 factors 4 & 8).
@@ -24,14 +24,14 @@ host/port.
 | Service/module | Role | Sprint |
 |---|---|---|
 | `discovery-server` | Hosts the Eureka registry/dashboard | Sprint 1 |
-| All nine services | Register with Eureka on startup | Sprint 1 onward (each service registers as it's built) |
+| All eight services | Register with Eureka on startup | Sprint 1 onward (each service registers as it's built) |
 | `api-gateway` | Resolves routes via Eureka-backed `lb://` URIs | Sprint 4 |
 | `order-service`, others with Feign clients | Resolve peer services via Eureka instead of hardcoded hosts | Sprint 3 onward |
 
 ## How it's implemented in FDP
 - `discovery-server` module: `spring-cloud-starter-netflix-eureka-server` dependency, annotated
   with `@EnableEurekaServer`, dashboard reachable at port `8761` (RULES.md §2; SPRINTS.md Sprint 1).
-- Every other service (all nine, per RULES.md §2 service inventory) depends on
+- Every other service (all eight, per RULES.md §2 service inventory) depends on
   `spring-cloud-starter-netflix-eureka-client` and registers with `discovery-server` on startup.
 - `api-gateway` route definitions use `lb://<service-name>` URIs resolved through Eureka rather
   than static hosts (RULES.md §2, §6).

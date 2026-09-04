@@ -21,7 +21,7 @@ integrates with it directly.
 
 | Component | Role | Sprint |
 |---|---|---|
-| All nine services (RULES.md §2) | Emit structured JSON to stdout, tailed by Logstash | Sprint 6 |
+| All eight services (RULES.md §2) | Emit structured JSON to stdout, tailed by Logstash | Sprint 6 |
 | Logstash itself | Added to `docker-compose.yml` alongside Elasticsearch and Kibana | Sprint 6 |
 
 ## How it's implemented in FDP

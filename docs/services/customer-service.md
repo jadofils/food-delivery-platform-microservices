@@ -31,8 +31,8 @@ isolated (RULES.md §5).
 
 ## Depends on / depended on by
 - **Depends on:** `discovery-server` (Eureka registration), `config-server` (externalized config),
-  its own `customer_db` Postgres instance. It re-validates JWTs locally against `identity-service`'s
-  cached JWKS as defense-in-depth (RULES.md §8) rather than calling `identity-service`
+  its own `customer_db` Postgres instance. It re-validates JWTs locally against Keycloak's
+  cached JWKS as defense-in-depth (RULES.md §8) rather than calling Keycloak
   per-request.
 - **Depended on by:** `order-service` calls `customer-service` synchronously via OpenFeign to
   validate customer existence and delivery address before accepting an order placement, resolved
@@ -47,6 +47,6 @@ and no direct database access from any other module.
 ## Related
 - RULES.md §2 (Service inventory), §5 (Data ownership), §6 (Communication rules)
 - SPRINTS.md — Sprint 2
-- [`./identity-service.md`](./identity-service.md) — source of the JWT claims this service
-  re-validates locally
+- [`../technologies/keycloak.md`](../technologies/keycloak.md) — source of the JWT claims this
+  service re-validates locally
 - [`./api-gateway.md`](./api-gateway.md) — routes `/api/customers/**` to this service

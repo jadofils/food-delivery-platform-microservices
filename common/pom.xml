@@ -13,8 +13,9 @@
 	<name>common</name>
 	<description>
 		FDP shared kernel. Cross-cutting types only (event payloads, DomainException hierarchy,
-		ApiErrorResponse DTO, JWT-claims parsing utilities) — never a JPA entity/repository. See
-		docs/RULES.md §3.
+		ApiErrorResponse DTO, PII masking) — never a JPA entity/repository. See docs/RULES.md §3.
+		JWT validation is Keycloak + each service's own Spring Security OAuth2 Resource Server
+		config (RULES.md §8), not a common-owned component — there is no custom token codec here.
 	</description>
 
 	<dependencies>
@@ -44,17 +45,6 @@
 			<artifactId>jakarta.servlet-api</artifactId>
 			<scope>provided</scope>
 		</dependency>
-		<!--
-			provided, same reasoning as jakarta.servlet-api above: PermissionInterceptor implements
-			HandlerInterceptor, which lives in spring-webmvc specifically (unlike the exception
-			types AbstractGlobalExceptionHandler uses, which are plain spring-web). Every MVC-based
-			service already brings spring-webmvc via spring-boot-starter-web.
-		-->
-		<dependency>
-			<groupId>org.springframework</groupId>
-			<artifactId>spring-webmvc</artifactId>
-			<scope>provided</scope>
-		</dependency>
 		<!-- tools.jackson, not com.fasterxml.jackson: Boot 4 ships Jackson 3.x, a real rename
 			 (ObjectMapper/JsonSerializer->ValueSerializer/SerializerProvider->SerializationContext
 			 all moved groupId+package). Using the classic com.fasterxml.jackson.databind types
@@ -64,12 +54,6 @@
 		<dependency>
 			<groupId>tools.jackson.core</groupId>
 			<artifactId>jackson-databind</artifactId>
-		</dependency>
-		<!-- Nested JWT (sign then encrypt) for JwtEncoder/JwtDecoder. Version centralized in the
-			 root aggregator's dependencyManagement, not here. -->
-		<dependency>
-			<groupId>com.nimbusds</groupId>
-			<artifactId>nimbus-jose-jwt</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

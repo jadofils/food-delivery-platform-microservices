@@ -1,0 +1,106 @@
+{
+  "realm": "fdp",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 900,
+  "roles": {
+    "realm": [],
+    "client": {
+      "fdp-api": [
+        { "name": "user:read", "description": "View user accounts" },
+        { "name": "user:manage", "description": "Create, update, lock/unlock user accounts" },
+        { "name": "order:create", "description": "Place an order" },
+        { "name": "order:cancel", "description": "Cancel an order" },
+        { "name": "order:read", "description": "View orders" },
+        { "name": "restaurant:menu:write", "description": "Create and modify a restaurant's menu" },
+        { "name": "restaurant:menu:read", "description": "View a restaurant's menu" },
+        { "name": "delivery:status:update", "description": "Update a delivery's status" },
+        { "name": "delivery:read", "description": "View delivery records" },
+        { "name": "notification:read", "description": "View notification/audit records" }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "fdp-api",
+      "name": "FDP API",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["*"],
+      "webOrigins": ["*"]
+    }
+  ],
+  "users": [
+    {
+      "username": "admin@fdp.test",
+      "email": "admin@fdp.test",
+      "firstName": "Admin",
+      "lastName": "User",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "Admin@123", "temporary": false }
+      ],
+      "clientRoles": {
+        "fdp-api": [
+          "user:read", "user:manage",
+          "order:create", "order:cancel", "order:read",
+          "restaurant:menu:write", "restaurant:menu:read",
+          "delivery:status:update", "delivery:read",
+          "notification:read"
+        ]
+      }
+    },
+    {
+      "username": "customer@fdp.test",
+      "email": "customer@fdp.test",
+      "firstName": "Demo",
+      "lastName": "Customer",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "Customer@123", "temporary": false }
+      ],
+      "clientRoles": {
+        "fdp-api": ["order:create", "order:cancel", "order:read", "restaurant:menu:read"]
+      }
+    },
+    {
+      "username": "restaurant-owner@fdp.test",
+      "email": "restaurant-owner@fdp.test",
+      "firstName": "Demo",
+      "lastName": "RestaurantOwner",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "Owner@123", "temporary": false }
+      ],
+      "clientRoles": {
+        "fdp-api": ["restaurant:menu:write", "restaurant:menu:read", "order:read"]
+      }
+    },
+    {
+      "username": "delivery-agent@fdp.test",
+      "email": "delivery-agent@fdp.test",
+      "firstName": "Demo",
+      "lastName": "DeliveryAgent",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "Agent@123", "temporary": false }
+      ],
+      "clientRoles": {
+        "fdp-api": ["delivery:status:update", "delivery:read", "order:read"]
+      }
+    }
+  ]
+}

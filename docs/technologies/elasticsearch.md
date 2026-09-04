@@ -21,7 +21,7 @@ shipped by Logstash from every service's container stdout.
 
 | Component | Role | Sprint |
 |---|---|---|
-| All nine services (RULES.md §2) | Produce stdout JSON logs that end up indexed here (indirectly, via Logstash) | Sprint 6 |
+| All eight services (RULES.md §2) | Produce stdout JSON logs that end up indexed here (indirectly, via Logstash) | Sprint 6 |
 | Elasticsearch itself | Added to `docker-compose.yml` alongside Logstash and Kibana | Sprint 6 |
 
 ## How it's implemented in FDP

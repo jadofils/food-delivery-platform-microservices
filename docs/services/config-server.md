@@ -18,8 +18,8 @@ does not persist domain data.
 
 ## API surface (planned)
 Exposes Spring Cloud Config Server's standard configuration-serving endpoints so each registered
-client (`discovery-server`, `api-gateway`, `identity-service`, `customer-service`, and the rest of
-the nine services) can pull its `application-{profile}.yml` structure at startup. It does not
+client (`discovery-server`, `api-gateway`, `customer-service`, and the rest of
+the eight services) can pull its `application-{profile}.yml` structure at startup. It does not
 expose any domain/business REST API — its surface is purely configuration delivery per RULES.md
 §1 (factor 3) and §2.
 
@@ -31,9 +31,10 @@ expose any domain/business REST API — its surface is purely configuration deli
   condition: service_healthy` ensures `config-server` is ready before dependents start).
 
 ## Delivered in
-Sprint 1 — "Identity, discovery, config" (SPRINTS.md). Exit criteria for Sprint 1 require
-`identity-service` to pull config from `config-server`, so `config-server` must be functioning
-before that sprint closes.
+Sprint 1 — "Identity, discovery, config" (SPRINTS.md). Sprint 1 stands up `config-server` itself
+(Keycloak, its identity-provider counterpart in that sprint, is external infrastructure and isn't
+an FDP Spring service pulling config) — its first real FDP consumer is `customer-service` in
+Sprint 2, which must be functioning before that sprint closes.
 
 ## Related
 - RULES.md §2 (Service inventory), §1 factor 3 (Config)

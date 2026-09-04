@@ -22,7 +22,7 @@ instead of embedding it in their own packaged artifact.
 | Service/module | Role | Sprint |
 |---|---|---|
 | `config-server` | Hosts centralized config for every other service | Sprint 1 |
-| All nine services | Pull their config from `config-server` on startup | Sprint 1 onward |
+| All eight services | Pull their config from `config-server` on startup | Sprint 1 onward |
 
 ## How it's implemented in FDP
 - `config-server` module: `spring-cloud-config-server` dependency, annotated with

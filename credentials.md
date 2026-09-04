@@ -1,20 +1,16 @@
 # Seeded demo credentials
 
-> **Local development and testing only.** These accounts and passwords are seeded by
-> `identity-service`'s `V3__seed_demo_users.sql` Flyway migration and are intentionally published
-> here — they exist to make the system usable immediately after `docker compose up`, before any
-> real user has registered. **Never** reuse this pattern (a published plaintext password backing a
-> seeded account) for anything beyond local dev/test. A staging or production environment must
-> never run this migration, or must run an equivalent that creates its initial admin with a
-> generated, one-time, out-of-band-delivered password instead.
+> **Local development and testing only.** These accounts are provisioned by Keycloak's realm
+> import (`docker/keycloak/fdp-realm.json`) on first container start, and their passwords are
+> intentionally published here — they exist to make the system usable immediately after
+> `docker compose up`, before any real user exists. **Never** reuse this pattern (a published
+> plaintext password for a seeded account, defined directly in a committed file) for anything
+> beyond local dev/test. A staging or production Keycloak realm must never import users this way.
 
-Why this file exists at all: once endpoint security landed (RULES.md §8), every endpoint except
-`/api/v1/auth/register` and `/api/v1/auth/login` requires a valid token, and the only way to
-obtain an `ADMIN`-permissioned token is to already have an `ADMIN` account. One account per
-baseline role (RULES.md §8) is seeded so the system is exercisable end to end without that
-chicken-and-egg problem.
+One user per baseline role (RULES.md §8), each with the client roles (permissions) that role
+grants on the `fdp-api` client:
 
-| Role | Email | Password |
+| Role | Username / email | Password |
 |---|---|---|
 | `ADMIN` | `admin@fdp.test` | `Admin@123` |
 | `CUSTOMER` | `customer@fdp.test` | `Customer@123` |
@@ -23,12 +19,20 @@ chicken-and-egg problem.
 
 ## Getting a token
 
-```
-POST /api/v1/auth/login
-Content-Type: application/json
+Keycloak issues tokens directly — there is no FDP-owned `/auth/login` endpoint (RULES.md §8;
+`identity-service` was retired in favor of Keycloak, see `docs/decisions/`):
 
-{"email": "admin@fdp.test", "password": "Admin@123"}
+```
+POST http://localhost:8180/realms/fdp/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=fdp-api&username=admin@fdp.test&password=Admin@123
 ```
 
-The response's `accessToken` is a nested JWT (signed, then encrypted — RULES.md §8) valid for 15
-minutes. Send it as `Authorization: Bearer <accessToken>` on every other endpoint.
+The response's `access_token` is a standard signed (RS256) OIDC access token, valid for 15
+minutes, carrying the user's permissions under `resource_access.fdp-api.roles`. Send it as
+`Authorization: Bearer <access_token>` to any service validating against Keycloak.
+
+Keycloak's own admin console (separate from the `fdp` realm's users above) is reachable at
+`http://localhost:8180`, logged in with `KEYCLOAK_ADMIN_USER`/`KEYCLOAK_ADMIN_PASSWORD` from
+`.env.example` (defaults: `kcadmin` / `kcadmin`, also local-dev-only).

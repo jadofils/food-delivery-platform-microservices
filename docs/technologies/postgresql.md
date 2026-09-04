@@ -8,9 +8,10 @@ whose domain data is naturally relational and transactional.
 - Required by the base assignment for `customer_db`, `restaurant_db`, `order_db`, `delivery_db`
   (ReadMe.md, Technical Requirements / Epic 1) — the monolith-to-microservices migration keeps
   Postgres as the relational store for these four domains.
-- Enforces database-per-service isolation: each of `identity-service`, `customer-service`,
-  `restaurant-service`, `order-service`, and `delivery-service` owns its own database with no
-  cross-service joins and no shared tables (RULES.md §5).
+- Enforces database-per-service isolation: each of `customer-service`, `restaurant-service`,
+  `order-service`, and `delivery-service` owns its own database with no cross-service joins and no
+  shared tables (RULES.md §5). Keycloak also uses this Postgres instance (`keycloak_db`), but as
+  infrastructure it manages itself — not one of FDP's own service databases (RULES.md §8).
 - Dev/prod parity requires the real engine at every test level — no H2 or embedded substitute,
   even in unit/integration tests (RULES.md §9, RULES.md §1 factor 10).
 - Schema changes are managed exclusively through Flyway migrations against Postgres, never by
@@ -20,7 +21,6 @@ whose domain data is naturally relational and transactional.
 
 | Service | Database | Sprint introduced |
 |---|---|---|
-| `identity-service` | `identity_db` | Sprint 1 |
 | `customer-service` | `customer_db` | Sprint 2 |
 | `restaurant-service` | `restaurant_db` | Sprint 2 |
 | `order-service` | `order_db` | Sprint 3 |

@@ -39,19 +39,21 @@ of these is not done, regardless of what its acceptance criteria say.
 | `config-server` | Centralized externalized configuration for every other service | — | 8888 |
 | `discovery-server` | Eureka service registry | — | 8761 |
 | `api-gateway` | Single entry point: routing, JWT validation, rate limiting | — | 8080 |
-| `identity-service` | User accounts, roles, permissions (RBAC), JWT issuance | `identity_db` (Postgres) | 8081 |
 | `customer-service` | Customer profiles, delivery addresses | `customer_db` (Postgres) | 8082 |
 | `restaurant-service` | Restaurants, menus, menu items | `restaurant_db` (Postgres) | 8083 |
 | `order-service` | Order placement, order lifecycle | `order_db` (Postgres) | 8084 |
 | `delivery-service` | Delivery assignment and tracking | `delivery_db` (Postgres) | 8085 |
 | `notification-service` | Consumes domain events, dispatches notifications, persists notification/audit log | `notification_db` (MongoDB) | 8086 |
 
-Infrastructure (not services, but required backing resources): PostgreSQL, MongoDB, RabbitMQ,
-Redis, Zipkin, Elasticsearch, Logstash, Kibana. All defined in `docker-compose.yml` (see
-[§10](#10-containerization)).
+Port 8081 is retired, not reassigned — it belonged to the now-retired `identity-service` (see
+`docs/decisions/`; Keycloak owns identity now, on its own port, listed below). Left as a gap
+rather than renumbering everything else, which would just be churn.
 
-This supersedes the port list in `ReadMe.md`, which predates `identity-service` and
-`notification-service`.
+Infrastructure (not services, but required backing resources): PostgreSQL, MongoDB, RabbitMQ,
+Redis, Keycloak (:8180), Zipkin, Elasticsearch, Logstash, Kibana. All defined in
+`docker-compose.yml` (see [§10](#10-containerization)).
+
+This supersedes the port list in `ReadMe.md`, which predates `notification-service` and Keycloak.
 
 ---
 
@@ -63,7 +65,6 @@ fdp/
 ├── config-server/
 ├── discovery-server/
 ├── api-gateway/
-├── identity-service/
 ├── customer-service/
 ├── restaurant-service/
 ├── order-service/
@@ -101,9 +102,9 @@ for any given class:
 | Belongs in `common` | Reason |
 |---|---|
 | Event payload DTOs (e.g. `OrderPlacedEvent`, `DeliveryStatusUpdatedEvent`) — data only, no behavior | Publisher and every consumer must agree on the wire shape or a deserialization mismatch ships silently |
-| The `DomainException` hierarchy and `ApiErrorResponse` DTO (§14) | The entire point of the shared error envelope is that all nine services return byte-identical shapes |
-| JWT permission-claims parser | One correct implementation of security-sensitive code beats nine slightly-different copies |
-| Shared header/MDC constant names (`X-Trace-Id`, `X-Correlation-Id`, the permission-claim key) | A typo in a literal string used by nine services is a real, dumb bug class worth one source of truth |
+| The `DomainException` hierarchy and `ApiErrorResponse` DTO (§14) | The entire point of the shared error envelope is that all eight services return byte-identical shapes |
+| A `Converter<Jwt, ? extends AbstractAuthenticationToken>` mapping Keycloak's `resource_access.fdp-api.roles` claim into Spring Security `GrantedAuthority`s (§8) | Every service's OAuth2 Resource Server config needs the exact same claim path read the exact same way — one correct implementation beats eight slightly-different copies |
+| Shared header/MDC constant names (`X-Trace-Id`, `X-Correlation-Id`) | A typo in a literal string used by eight services is a real, dumb bug class worth one source of truth |
 
 | Stays a per-service copy | Reason |
 |---|---|
@@ -126,7 +127,7 @@ class to a single service — the fan-out above is exactly why.
   declare a `<dependencies>` block — nothing should be force-inherited onto every service.
 - Each service's own `pom.xml` declares the actual `<dependencies>` it uses, without version
   numbers (inherited from the parent's `dependencyManagement`). `api-gateway` does not depend on
-  `spring-boot-starter-data-jpa`; `identity-service` does not depend on `spring-cloud-starter-gateway`.
+  `spring-boot-starter-data-jpa`; `customer-service` does not depend on `spring-cloud-starter-gateway`.
   A service's POM should read as an accurate list of what that service actually needs.
 - Never copy a dependency version into a service POM to "pin" it — bump the version in the root
   BOM/properties instead, so every service moves together and drift is impossible.
@@ -193,61 +194,52 @@ class to a single service — the fan-out above is exactly why.
 
 ## 8. Security
 
-- `identity-service` is the sole issuer of JWTs. It owns users, roles, and permissions — nobody
-  else calls it per-request to validate a token; every service validates locally.
-- Baseline roles: `CUSTOMER`, `RESTAURANT_OWNER`, `DELIVERY_AGENT`, `ADMIN`. Permissions are
-  fine-grained and mapped to roles inside `identity-service`; services authorize on permissions,
-  not on role names directly, so permission-to-role mapping can change without touching every
-  service.
-- Secrets (DB credentials, JWT signing/encryption keys, RabbitMQ credentials) are never committed.
+**Keycloak is FDP's identity provider — there is no custom `identity-service`.** Registration,
+login, credential storage, and token issuance are Keycloak's job, not code this repo owns. This
+is a deliberate reversal of an earlier design (a hand-rolled `identity-service` issuing nested
+signed-and-encrypted JWTs) — see `docs/decisions/` for why. Keycloak still issues JWTs — adopting
+it doesn't remove JWTs from the picture, it removes the custom crypto and user-store code that
+used to build them.
+
+- **Realm, client, roles.** A single `fdp` realm holds every FDP user. One client, `fdp-api`,
+  represents the whole platform (not one client per service) — its **client roles** are FDP's
+  permission strings (`order:create`, `restaurant:menu:write`, …), the same fine-grained,
+  action-shaped names used throughout this document. Keycloak embeds a user's client roles in the
+  access token under `resource_access.fdp-api.roles` by default, with no custom protocol mapper
+  needed. Services authorize on these permission strings, never on a role/username directly.
+- **Tokens are standard OIDC access tokens** — signed (RS256) by Keycloak, **not** additionally
+  encrypted. Confidentiality comes from TLS in transit, the normal industry approach; a bespoke
+  encryption layer on top would protect against a threat model (someone reading tokens off the
+  wire without also being able to intercept TLS) that doesn't hold up on its own merits. This also
+  means every service's validation logic is exactly Spring Security's stock
+  `spring-boot-starter-oauth2-resource-server`, not a custom codec — real key distribution is
+  Keycloak's own JWKS endpoint (`/realms/fdp/protocol/openid-connect/certs`), auto-discovered from
+  `spring.security.oauth2.resourceserver.jwt.issuer-uri`. No shared secret to distribute, no
+  custom `common`-owned encoder/decoder.
+- **Enforcement is native Spring Security**, once a service actually has endpoints:
+  `permitAll()` route matchers for public endpoints (registration/login don't exist in FDP code
+  anymore — they're Keycloak's login/token endpoints directly) and
+  `@PreAuthorize("hasAuthority('order:create')")` (or an equivalent `SecurityFilterChain`
+  authorization rule) for everything else. This is the natural next step now that adopting
+  Keycloak means adopting real Spring Security — no custom filter/interceptor pair in `common`
+  standing in for it.
+- **Local dev bootstrap.** Keycloak's own Postgres schema (`keycloak_db`) is infrastructure, not
+  an FDP service database — FDP's Flyway migrations never touch it (§5, §10). The `fdp` realm,
+  the `fdp-api` client, its baseline client roles, and one demo user per baseline role
+  (`CUSTOMER`, `RESTAURANT_OWNER`, `DELIVERY_AGENT`, `ADMIN`) are provisioned automatically on
+  first container start via a realm-import file (`docker/keycloak/fdp-realm.json`) — see
+  `credentials.md` for the demo accounts and how to obtain a token from Keycloak directly.
+- **Cross-container hostname caveat.** A token's `iss` claim is whatever hostname the client used
+  to reach Keycloak's token endpoint. A token requested via `localhost:8180` (from the host
+  machine) will not validate against an `issuer-uri` configured as `http://keycloak:8080/...`
+  (the in-network hostname), and vice versa — Spring Security's issuer check is exact-match. The
+  first service that actually validates tokens needs to settle this (fixed `KC_HOSTNAME` plus a
+  consistent access pattern for whoever requests tokens) rather than rediscovering it by a
+  confusing 401.
+- Secrets (DB credentials, Keycloak admin credentials, RabbitMQ credentials) are never committed.
   They are injected via environment variables / Docker secrets and sourced from Config Server's
-  encrypted properties, not from a plaintext file in this repo.
-
-### JWT: shared kernel in `common`, issuance in `identity-service`
-
-The claim structure, the token codec, and the request-pipeline pieces every service reuses to
-enforce it all live in `common`'s `security.jwt` package — this is exactly the kind of "producer
-and consumer must agree atomically" concern §3's shared-vs-local table calls out for `common`.
-Only *issuance* (holding the private signing key, actually building a token at login) is
-`identity-service`-specific.
-
-- **Nested JWT — signed, then encrypted.** `JwtEncoder` builds a `JWTClaimsSet` (subject,
-  `permissions`, issued/expiry time — nothing else; email or any other display PII never goes in
-  a token, see below), signs it (RS256) into a `SignedJWT`, then encrypts that whole signed token
-  as the payload of a `JWEObject` (`A256GCM`, direct encryption). `JwtDecoder` reverses this:
-  decrypt, then verify the signature, then check issuer and expiry. Every failure mode — bad
-  signature, decryption failure, expired, wrong issuer, malformed input — surfaces as the same
-  `UnauthorizedException` with the same message, so a caller never learns which check failed.
-  Signing (RS256) answers *authenticity*; encryption (`A256GCM`) answers *confidentiality* — a
-  party without the encryption key cannot read the claims at all, only decode base64 noise.
-- **Two different keys, two different distribution stories.** The RS256 signing keypair is
-  asymmetric: only `identity-service` ever holds the private half; a validating service only
-  ever needs the public half (JWKS-style distribution — no secret to leak). The `A256GCM`
-  encryption key is symmetric by necessity (JWE-for-many-readers doesn't have an asymmetric
-  option that scales past one recipient): every validating service holds the *same* key, sourced
-  from Config Server once it exists. **Current state:** both keys are generated fresh in memory
-  at `identity-service` startup (`SecurityConfig`) — correct for a single-instance dev setup, but
-  tokens issued before a restart don't verify after one, and there is no key-distribution path to
-  other services yet. Both are explicitly deferred until Config Server exists; don't mistake the
-  current in-memory generation for the target design.
-- **Chaining — the servlet filter chain, not Spring Security.** No FDP service depends on
-  `spring-boot-starter-security`; `JwtAuthenticationFilter` (`common`) is a plain
-  `jakarta.servlet.Filter` each MVC-based service registers into its own filter chain. It reads
-  `Authorization: Bearer <token>`, decodes it via `JwtDecoder`, and attaches the resulting
-  `JwtClaims` to the request as an attribute for the next link — it does not reject a *missing*
-  token itself (plenty of endpoints are public), but a token that *is* present and invalid is
-  rejected immediately with 401 in the standard `ApiErrorResponse` shape, built by hand since a
-  filter runs before `@RestControllerAdvice` ever sees the request.
-- **Secure by default.** `PermissionInterceptor` (`common`, a Spring MVC `HandlerInterceptor`)
-  runs after the filter and enforces two annotations: `@Public` (this endpoint is intentionally
-  unauthenticated — registration, login) and `@RequiresPermission("x")` (the token's permissions
-  must contain `x`). An endpoint with **neither** annotation still requires a valid token — opting
-  out of authentication is explicit, opting in is the default. Because the interceptor runs inside
-  Spring MVC's own dispatch, its exceptions (`UnauthorizedException`, `ForbiddenException`) reach
-  `@RestControllerAdvice` normally, with no special-casing.
-- `api-gateway`, once it exists, sits in front of all of this doing coarse authentication at the
-  edge; it does not replace each service's own filter+interceptor pair, which stays the real
-  enforcement point (defense in depth — see §14's shared error envelope, which both layers use).
+  encrypted properties, not from a plaintext file in this repo — `credentials.md`'s seeded demo
+  accounts are the sole, explicit, documented exception (RULES.md itself, not a leak).
 
 ### PII masking
 
@@ -287,11 +279,17 @@ Only *issuance* (holding the private signing key, actually building a token at l
     maintained per service, kept for learning purposes and for anyone who wants to `docker build`
     a service manually without Maven. It is not what CI runs, and the two must not silently
     diverge — if a service's runtime dependencies change, update both.
-- `docker-compose.yml` at the repo root starts the complete system: all nine services plus
-  Postgres, MongoDB, RabbitMQ, Redis, Zipkin, Elasticsearch, Logstash, Kibana, Prometheus, and
-  Grafana (§13). Locally, `docker-compose.yml` references images built by Jib
+- `docker-compose.yml` at the repo root starts the complete system: all eight FDP services plus
+  Postgres, MongoDB, RabbitMQ, Redis, Keycloak, Zipkin, Elasticsearch, Logstash, Kibana,
+  Prometheus, and Grafana (§13). Locally, `docker-compose.yml` references images built by Jib
   (`jib:dockerBuild` for a local-only image, or the registry tag CI already pushed) — it does not
   invoke the learning-purpose Dockerfiles as part of the standard `docker compose up` flow.
+- Keycloak is provisioned on first start from a realm-import file
+  (`docker/keycloak/fdp-realm.json`, mounted read-only) — the `fdp` realm, `fdp-api` client,
+  baseline client roles, and demo users all come from that one file, not manual console setup.
+  Its own schema lives in `keycloak_db` (created by `docker/postgres/init-databases.sql`, same as
+  any other Postgres-backed database here) — Keycloak owns that schema entirely; FDP's Flyway
+  migrations never touch it (§5, §8).
 - Health checks are mandatory on every container; `depends_on` uses `condition: service_healthy`
   so `discovery-server` and `config-server` are ready before dependents start, and infra
   (databases, broker) is ready before any service that needs it.
@@ -468,8 +466,8 @@ in this document gets its own short reference doc — one file per item, not a s
   responsibility, why it's a separate service (boundary rationale), its database, its planned API
   surface, what it depends on / what depends on it (§6), and which sprint delivers it.
 - **`docs/technologies/<tool-name>.md`** — one per technology/tool named anywhere in this file
-  (Postgres, MongoDB, RabbitMQ, Redis, Flyway, JWT, Resilience4j, Eureka, Spring Cloud Config,
-  Spring Cloud Gateway, Zipkin, Elasticsearch, Logstash, Kibana, Prometheus, Grafana,
+  (Postgres, MongoDB, RabbitMQ, Redis, Flyway, Keycloak, JWT, Resilience4j, Eureka, Spring Cloud
+  Config, Spring Cloud Gateway, Zipkin, Elasticsearch, Logstash, Kibana, Prometheus, Grafana,
   Testcontainers, Jib, Docker, Bean Validation, Spring AOP, GitHub Actions). Covers: what it is,
   *why* FDP uses it (tied to a concrete need, not a generic selling point), *where* it's used
   (which service(s), which sprint introduces it), and *how* it's implemented here (starter/

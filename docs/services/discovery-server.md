@@ -1,7 +1,7 @@
 # discovery-server
 
 ## Responsibility
-Runs the Eureka service registry for the platform (RULES.md §2). All nine services are designed
+Runs the Eureka service registry for the platform (RULES.md §2). All eight services are designed
 to register with it on startup, and it exposes a dashboard at `:8761` showing every registered
 service instance.
 
@@ -9,8 +9,8 @@ service instance.
 Service discovery is infrastructure that every other service depends on, not domain logic owned
 by any one of them. It must be reachable before any domain service starts (SPRINTS.md
 sequencing notes: "no domain service should be started before `discovery-server`/
-`config-server`/`identity-service` exist"), so it has to be independently deployable and
-independently startable rather than bundled into another service.
+`config-server`/Keycloak exist"), so it has to be independently deployable and independently
+startable rather than bundled into another service.
 
 ## Database
 None. `discovery-server` has no datastore of its own (RULES.md §2) — its registry is in-memory
@@ -31,8 +31,9 @@ domain/business REST API.
   `lb://` URIs.
 
 ## Delivered in
-Sprint 1 — "Identity, discovery, config" (SPRINTS.md). Exit criteria require `identity-service`
-to register with Eureka before Sprint 1 is considered done.
+Sprint 1 — "Identity, discovery, config" (SPRINTS.md). Sprint 1 stands up `discovery-server`
+itself; the first FDP service to actually register with it is `customer-service` in Sprint 2
+(Keycloak, Sprint 1's identity provider, is external infrastructure, not a Eureka client).
 
 ## Related
 - RULES.md §2 (Service inventory), §1 factor 8 (Concurrency)

@@ -6,7 +6,7 @@ stitches them into traces by shared trace/span IDs, and exposes a UI/API for fin
 request and seeing the latency breakdown across every hop it took.
 
 ## Why FDP uses it
-- FDP is decomposed into nine independently deployable services (RULES.md §2); a single order
+- FDP is decomposed into eight independently deployable services (RULES.md §2); a single order
   flow crosses several of them (order → restaurant/customer validation → delivery → notification).
   Without a distributed tracer there is no way to see that as one request rather than isolated,
   unrelated log lines per service.
@@ -21,7 +21,7 @@ request and seeing the latency breakdown across every hop it took.
 
 | Service/module | Role | Sprint |
 |---|---|---|
-| All nine services (RULES.md §2) | Emit spans via Micrometer Tracing (Brave), report to Zipkin | Sprint 6 |
+| All eight services (RULES.md §2) | Emit spans via Micrometer Tracing (Brave), report to Zipkin | Sprint 6 |
 
 Sprint 6 exit criteria (SPRINTS.md): "a single order can be traced end-to-end in Zipkin across all
 five services it touches."
