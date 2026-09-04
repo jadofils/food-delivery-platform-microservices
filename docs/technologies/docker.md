@@ -48,6 +48,49 @@ which is the separate, CI-driven image-build path (see `./jib.md`).
 - `.dockerignore` files per service exclude build artifacts, added alongside each service's
   Dockerfile in Sprint 7 (SPRINTS.md Sprint 7).
 
+## Getting started
+
+**Status today:** `docker-compose.yml` is real and startable today — `docker compose up -d` brings
+up the five Sprint 0/1 infra containers (Postgres, MongoDB, RabbitMQ, Redis, Keycloak). Zero FDP
+service Dockerfiles exist yet, and `docker-compose.yml` has no block for any of the six
+unbuilt-or-skeleton FDP services (`api-gateway`, `customer-service`, `restaurant-service`,
+`order-service`, `delivery-service`, `notification-service`) — those all land in Sprint 7 alongside
+the Dockerfiles themselves.
+
+### How to start it
+From the repo root:
+```
+docker compose up -d
+```
+This starts only the five infra containers listed above — there is no FDP service to containerize
+and start yet. To start a single container instead, e.g. `docker compose up -d postgres`.
+
+### How to access it
+- `docker compose ps` — see container status and health.
+- `docker compose logs -f <container>` — tail a specific container's logs, e.g.
+  `docker compose logs -f fdp-keycloak`.
+- Per-container ports, credentials, and connection details are already documented in each infra
+  tool's own doc rather than repeated here — see `./postgresql.md`, `./mongodb.md`,
+  `./rabbitmq.md`, `./redis.md`, and `./keycloak.md`.
+
+### Endpoints it exposes
+Not applicable to Docker itself — Docker is the runtime/orchestration layer, not a service with its
+own API surface. What each container exposes is documented in that container's own technology doc.
+
+### Installation & dependencies
+- Docker Engine plus Docker Compose v2 (the `docker compose` subcommand, not standalone
+  `docker-compose`) must be installed and running locally — nothing else is required to bring up
+  the current `docker-compose.yml`.
+- No FDP service `pom.xml` depends on Docker directly; per-service Dockerfiles and `.dockerignore`
+  files are Sprint 7 additions, not present in the repo today.
+
+### For newcomers
+Know the difference between what's live and what's still planned: `docker-compose.yml` orchestrating
+the five infra containers is real today, while a per-service multi-stage `Dockerfile` plus that
+service's own block in `docker-compose.yml` is Sprint 7 work, not yet started. Once that lands, Jib
+(`./jib.md`) is the actually-used CI image-build path — not the hand-written Dockerfile, which
+exists for learning/manual use only (RULES.md §10).
+
 ## Related
 - RULES.md §1 (factor 5, factor 10), RULES.md §5, RULES.md §9, RULES.md §10, RULES.md §13
 - SPRINTS.md Sprint 0, Sprint 7

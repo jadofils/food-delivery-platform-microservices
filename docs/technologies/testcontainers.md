@@ -46,6 +46,47 @@ required check; this is present from each service's first CI pipeline, not defer
   Testcontainers setup is independent — no shared container or shared schema across services' test
   suites.
 
+## Getting started
+
+**Status today:** No service's `pom.xml` declares any Testcontainers dependency yet — confirmed by
+grepping every module's `pom.xml` for "testcontainers". There is nothing to run today.
+Testcontainers is planned from Sprint 2 onward, starting with the first Postgres-backed service test
+(`customer-service`/`restaurant-service`).
+
+### How to start it
+Not usable yet — no service has Testcontainers-backed tests. Once a service does (Sprint 2 onward),
+its integration test suite runs the same way any Maven test run does:
+```
+./mvnw -pl <service> -am test
+```
+A real Postgres (or MongoDB/RabbitMQ, depending on the service) container spins up automatically for
+the duration of that test run — no manual container start needed, but a local Docker daemon must be
+running, since that's what Testcontainers uses under the hood to launch it.
+
+### How to access it
+Not applicable in the usual sense — Testcontainers-managed containers are ephemeral, spun up and torn
+down automatically around the test run, not something a developer connects to directly. While a test
+run is in progress, `docker ps` will show the container it launched, on a randomly-assigned host
+port Testcontainers picks itself.
+
+### Endpoints it exposes
+Not applicable — Testcontainers is test tooling, not a running service.
+
+### Installation & dependencies
+- Maven: the relevant Testcontainers module (e.g. `testcontainers-postgresql`,
+  `testcontainers-mongodb`, `testcontainers-rabbitmq`) as a test-scoped dependency in each backed
+  service's own `pom.xml`, versioned via the root aggregator's `dependencyManagement` (RULES.md §4)
+  — not present in any module today.
+- A running Docker daemon locally (or in CI) is the one hard requirement — Testcontainers needs it
+  even for test runs that don't otherwise touch Docker Compose.
+
+### For newcomers
+The one thing worth knowing before Sprint 2 lands: Testcontainers needs a running Docker daemon on
+whatever machine runs the tests, full stop — even though nothing in the test code looks like it's
+"using Docker" directly. If `./mvnw test` ever fails with a connection error to the Docker socket
+once these tests exist, that's the first thing to check. See `./docker.md` for the infra containers
+already running today, and `./github-actions.md` for how this suite becomes a required CI check.
+
 ## Related
 - RULES.md §9, RULES.md §11, RULES.md §1 factor 10
 - SPRINTS.md Sprint 2, Sprint 3, Sprint 5

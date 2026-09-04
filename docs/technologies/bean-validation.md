@@ -47,6 +47,43 @@ validate request DTOs.
   DTO) into the shared error envelope, with one `errors[]` entry per invalid field (RULES.md §14,
   §15).
 
+## Getting started
+
+**Status today:** One real, compiled-today fact: `common`'s `pom.xml` already declares
+`spring-boot-starter-validation` (verified — see the dependency block in `common/pom.xml`) as a
+baseline every future service inherits by depending on `common`. Beyond that, zero validated DTOs
+exist anywhere in the codebase — no service has a request DTO with `@NotNull`/`@Valid`/etc. yet,
+because no service has a controller or endpoint at all. `customer-service`, `order-service`, and
+the rest are still bare skeletons (`spring-boot-starter` + `spring-boot-starter-test` only, verified
+by reading their `pom.xml` files).
+
+### How to see it working
+There's nothing to run today. Once the first service defines a request DTO annotated with
+constraints (`@NotNull`, `@NotBlank`, `@Size`, `@Positive`, `@Email`, or a custom `@Constraint`)
+and a controller method takes it as `@Valid @RequestBody`, posting an invalid payload will trigger
+`MethodArgumentNotValidException`, translated by that service's `@RestControllerAdvice` (built on
+`common`'s `AbstractGlobalExceptionHandler`) into the shared error envelope with one `errors[]`
+entry per invalid field (RULES.md §14, §15). That first DTO belongs to `customer-service` or
+`restaurant-service`, Sprint 2 onward.
+
+### Endpoints it exposes
+None — Bean Validation is a library mechanism triggered declaratively (`@Valid`/`@Validated`) on a
+controller's own endpoints; it doesn't add any endpoint of its own.
+
+### Installation & dependencies
+- `spring-boot-starter-validation` (Hibernate Validator) is already present in `common`'s `pom.xml`
+  today — any service depending on `common` gets it transitively, with no extra step needed once
+  that service is scaffolded.
+- No service needs to add this dependency itself; it flows in through `common` (RULES.md §4 —
+  dependency versions live in the root POM only, never pinned per-service).
+
+### For newcomers
+There's nothing to run yet — the validation starter is a baseline dependency sitting quietly in
+`common`, waiting for the first controller. Read RULES.md §15 for the validation rules that apply
+the moment the first DTO is written: which annotations to use, the rule that a `ConstraintValidator`
+must stay side-effect-free (no DB lookups, no Feign calls — that's a service-layer `DomainException`
+instead), and how failures map into the shared error envelope.
+
 ## Related
 - RULES.md §14, RULES.md §15, RULES.md §16
 - SPRINTS.md Sprint 0

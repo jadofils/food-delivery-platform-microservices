@@ -51,6 +51,48 @@ annotations/AOP.
 - Fault-tolerance verification (stopping each service in turn and confirming graceful degradation)
   is a Sprint 8 exit criterion tied directly to this configuration (SPRINTS.md Sprint 8).
 
+## Getting started
+
+**Status today:** Nothing uses Resilience4j yet. No service has any Feign client to wrap — even
+`order-service`, the first service that will need one (Sprint 3), is still a bare
+`spring-boot-starter` + `spring-boot-starter-test` skeleton with no `resilience4j-spring-boot3`, no
+`spring-cloud-starter-openfeign`, no circuit breaker config, and no fallback methods anywhere in
+the repo.
+
+### How to start it
+Nothing to start — Resilience4j is an in-process library wired into whichever service has an
+outbound Feign call, not a standalone process. There is no service today with a call to wrap.
+
+### How to access it
+Not applicable today. Once `order-service` adds its first Feign client (Sprint 3), circuit breaker
+state becomes observable via that service's own `/actuator/circuitbreakers` endpoint (RULES.md
+§7) — but that requires both `spring-boot-starter-actuator` and `resilience4j-spring-boot3`, and
+neither is a dependency of any service yet.
+
+### Endpoints it exposes
+None of its own. Resilience4j augments a service's existing Actuator surface
+(`/actuator/circuitbreakers`, plus the broader `/actuator/health`, `/actuator/metrics`,
+`/actuator/prometheus` per RULES.md §13) once added — it does not expose a standalone endpoint of
+its own, and no service exposes any of this today.
+
+### Installation & dependencies
+- Not present in any service's `pom.xml` today. `order-service` will be the first consumer
+  (Sprint 3), adding `io.github.resilience4j:resilience4j-spring-boot3` (or whatever the actual
+  Boot-4.1.1-compatible coordinate turns out to be — this hasn't been verified against a resolved
+  jar yet, the same kind of check `./spring-cloud-config.md`'s `@EnableConfigServer` import needed
+  before it could be trusted) alongside `spring-cloud-starter-openfeign` and
+  `spring-boot-starter-aop`.
+- Versions are managed by the root aggregator's dependency management, never pinned per-service
+  (RULES.md §4) — confirming Boot 4.1.1 compatibility before pinning anything is Sprint 3 work,
+  not done yet.
+
+### For newcomers
+There's no running code to look at yet. Read RULES.md §7 for the exact rule this library will
+enforce the moment it's introduced: circuit breaker, retry, timeout, and bulkhead all configured
+explicitly per Feign client, with a typed fallback — never relying on Resilience4j's defaults. That
+rule applies starting with `order-service`'s first Feign client to `customer-service` and
+`restaurant-service` in Sprint 3; nothing before then exercises it.
+
 ## Related
 - `RULES.md §6` (Feign clients wrapped), `RULES.md §7` (resilience configuration), `RULES.md §14`
   (`CallNotPermittedException` translation), `RULES.md §13` (breaker state via Actuator)

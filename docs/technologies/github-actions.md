@@ -45,6 +45,48 @@ configured as workflow files under `.github/workflows/`.
   `feature/<service-name>-<short-description>` (or `fix/`, `chore/`, `docs/`) branches scoped to one
   service or one clearly-scoped cross-cutting concern (RULES.md §11).
 
+## Getting started
+
+**Status today:** `.github/workflows/ci.yml` is real and live — a single Sprint 0 baseline workflow
+named `CI`, triggered on `pull_request` and `push` to `main`, that checks out the repo, sets up JDK
+25 (Temurin), and runs `./mvnw --batch-mode --no-transfer-progress verify` against the whole
+reactor. Splitting this into path-filtered, per-service workflows is Sprint 7 scope, not done yet —
+every PR today rebuilds and retests every module. Branch protection (required status check, "up to
+date" requirement, auto-merge enabled) is described in a comment block at the bottom of `ci.yml` as
+a manual, one-time step in GitHub's repo Settings — that has not been verified as actually configured
+in this session; only the workflow file's existence and content have been confirmed.
+
+### How to start it
+It isn't started manually — it triggers automatically on any `pull_request` or `push` targeting
+`main`. To reproduce exactly what it runs, locally, from the repo root:
+```
+./mvnw --batch-mode --no-transfer-progress verify
+```
+
+### How to access it
+- **Actions tab** of the GitHub repo:
+  `https://github.com/jadofils/food-delivery-platform-microservices/actions` (once pushed).
+- **GitHub CLI:** `gh run list` to see recent runs, `gh run view <run-id>` (or `gh run view --log`)
+  for details/logs of a specific run.
+
+### Endpoints it exposes
+Not applicable — this is a CI pipeline, not a running service.
+
+### Installation & dependencies
+- No local install is required for the workflow itself to run — GitHub runs it on `ubuntu-latest`
+  runners automatically.
+- To reproduce it locally: a JDK 25 and the vendored Maven wrapper (`./mvnw`), both already required
+  for any other Maven work in this repo.
+- Optional: the `gh` CLI, for inspecting runs from a terminal instead of the Actions tab.
+
+### For newcomers
+Opening a pull request against `main` is what triggers this — there's no button to press. Until
+Sprint 7 splits this into per-service, path-filtered workflows, every PR rebuilds and retests the
+whole reactor, so a change to a single service's file currently still runs every service's tests too
+— slower than it will eventually be, but simple and correct in the meantime. See `./jib.md` for the
+image build/push step this workflow will gain in Sprint 7, and `./testcontainers.md` for the
+integration-test suite that becomes part of `verify` as services add it.
+
 ## Related
 - RULES.md §9, RULES.md §10, RULES.md §11, RULES.md §1 factor 5
 - SPRINTS.md Sprint 0, Sprint 7, "Sequencing notes"

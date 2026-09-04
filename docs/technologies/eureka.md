@@ -53,6 +53,66 @@ host/port.
   `depends_on: condition: service_healthy` ensures `discovery-server` is ready before dependents
   start (RULES.md §10).
 
+## Getting started
+
+**Status today:** Live and verified — `discovery-server` is a fully working Eureka registry.
+Every other service (`api-gateway`, `customer-service`, `restaurant-service`, `order-service`,
+`delivery-service`, `notification-service`) is still a bare skeleton (`spring-boot-starter` +
+`spring-boot-starter-test` only, per each module's own `pom.xml`) — none of them carries the
+Eureka *client* starter yet, so "all eight services register on startup" (see `Where it's used`
+above) is what Sprint 1 onward builds toward, not today's reality. The first real client is
+`customer-service`, Sprint 2.
+
+### How to start it
+From the repo root:
+```
+./mvnw -pl discovery-server -am spring-boot:run
+```
+or package and run the jar directly:
+```
+./mvnw -pl discovery-server -am package -DskipTests
+java -jar discovery-server/target/discovery-server-0.0.1-SNAPSHOT.jar
+```
+No external dependency is required — `discovery-server` needs no database, no broker, and no
+other running service. It's one of the two things (with `config-server`) everything else in the
+platform depends on existing first (SPRINTS.md Sprint 1).
+
+### How to access it
+- **Dashboard:** `http://localhost:8761` — the stock Eureka web UI: registered instances, their
+  status, and renewal (heartbeat) info. Right now it correctly shows "No instances available"
+  (empty), because no client has registered yet — that's expected, not broken.
+- **Health:** `http://localhost:8761/actuator/health` → `{"status":"UP"}` once started.
+- **Registry API** (what a real client talks to — not something a person normally calls by hand):
+  `curl http://localhost:8761/eureka/apps` returns the full registry as XML, a quick way to check
+  what's registered without opening the dashboard.
+
+### Endpoints it exposes
+| Endpoint | Purpose | Status |
+|---|---|---|
+| `GET /` | Eureka dashboard (HTML) | Live |
+| `GET /actuator/health` | Liveness/readiness | Live |
+| `GET /eureka/apps` | Full registry, machine-readable | Live |
+| `POST /eureka/apps/{appName}` | Client instance registration (called by Eureka clients, not by hand) | Live, but nothing registers yet |
+
+`discovery-server` exposes no business/domain endpoints of its own — it's infrastructure, not a
+service in the RULES.md §2 sense with its own API surface.
+
+### Installation & dependencies
+- Maven: `org.springframework.cloud:spring-cloud-starter-netflix-eureka-server` (server side,
+  `discovery-server` only, already added) / `spring-cloud-starter-netflix-eureka-client` (every
+  other service, added when that service is built) — version managed by the root aggregator's
+  `spring-cloud-dependencies` BOM import, never pinned per-service (RULES.md §4).
+- No local tool install needed beyond a JDK 25 + the vendored Maven wrapper (`./mvnw`) to run it
+  directly, or Docker once its container image exists (Sprint 7).
+
+### For newcomers
+Start here if you're new to the platform's service-discovery piece: run the commands above, open
+`http://localhost:8761` in a browser, and you'll see an empty dashboard. The `lb://<service-name>`
+addressing scheme every Feign client and gateway route will eventually use (RULES.md §6) only
+works once a service actually registers here — which is exactly why Sprint 1 stands this up
+before any domain service exists. See `./spring-cloud-config.md` for the other half of the
+platform's spine, and `docs/services/discovery-server.md` for this service's own reference doc.
+
 ## Related
 - `RULES.md §2` (service inventory, port 8761), `RULES.md §6` (communication rules — `lb://`
   resolution), `RULES.md §1` factors 4 & 8

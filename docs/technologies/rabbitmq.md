@@ -54,6 +54,66 @@ logic until Sprint 5.
   order → delivery → notification flow is visible as one trace in Zipkin (RULES.md §13; SPRINTS.md
   Sprint 6).
 
+## Getting started
+
+**Status today:** The container is live (part of the Sprint 1 `docker-compose.yml` additions) —
+but nothing publishes or consumes yet. `order-service`, `delivery-service`, and
+`notification-service` are all still bare skeletons (`spring-boot-starter` +
+`spring-boot-starter-test` only, per each module's own `pom.xml`), with no `spring-boot-starter-amqp`,
+no exchange/queue declarations, and no listeners. No exchanges, queues, or DLQs are provisioned yet
+— that's Sprint 5 work (`order-service` publishing, `delivery-service`/`notification-service`
+consuming). This is planned — Sprint 5, not yet implemented.
+
+### How to start it
+From the repo root:
+```
+docker compose up -d rabbitmq
+```
+This alone (no `.env` file needed) starts a single RabbitMQ 4 container (management plugin
+included) with the default credentials below. No exchanges or queues are declared on startup —
+those get created by service code once it exists (Sprint 5).
+
+### How to access it
+- **AMQP (what services will actually connect to):** `localhost:5672` (override via
+  `RABBITMQ_PORT` in a repo-root `.env` file — see `.env.example`).
+- **Management UI:** `http://localhost:15672` (override via `RABBITMQ_MANAGEMENT_PORT`), login
+  `fdp` / `fdp` — the main way to look at this today: you can watch exchanges, queues, and
+  connections there once something creates them, but nothing does yet.
+- **Default credentials (local dev only):** user `fdp`, password `fdp` — same values
+  `docker-compose.yml` falls back to if no `.env` is present. Never used for anything but local
+  development; production credentials come from environment injection (RULES.md §1 factor 3, §8).
+- **From inside the Docker network** (i.e. from another container), a service's own
+  `application-docker.yml` will point at the Docker service hostname, not `localhost`:
+  `rabbitmq:5672` (RULES.md §10).
+- **Health:** `docker compose ps rabbitmq` shows `healthy` once `rabbitmq-diagnostics -q ping`
+  succeeds.
+
+### Endpoints it exposes
+| Endpoint | Purpose | Status |
+|---|---|---|
+| AMQP `5672` | Publish/consume protocol | Live, unused |
+| `GET /api/overview` (management HTTP API, port `15672`) | Broker overview, stock RabbitMQ management plugin | Live |
+| `http://localhost:15672` | Management UI (HTML) | Live |
+
+These are stock RabbitMQ endpoints, not FDP-specific — no service exposes its own API through
+RabbitMQ; it's a broker in between, not a service being called.
+
+### Installation & dependencies
+- Docker image: `rabbitmq:4-management-alpine` (pinned in `docker-compose.yml`).
+- `order-service`, `delivery-service`, and `notification-service` will each declare
+  `spring-boot-starter-amqp` in their own `pom.xml` once built (RULES.md §4) — not present in any
+  of their POMs today.
+- No local tool install is required to *run* RabbitMQ (it's fully containerized); the management
+  UI is served by the container itself, no separate client needed.
+
+### For newcomers
+Run `docker compose up -d rabbitmq`, then open `http://localhost:15672` and log in with `fdp` /
+`fdp` to confirm it's up — you'll see an empty broker, no exchanges or queues, because nothing has
+declared any yet. This container being live and healthy is ahead-of-need infrastructure, not a
+sign the order → delivery → notification event flow is running. See `./mongodb.md` for where
+`notification-service` will persist what it consumes here, and `./resilience4j.md` for how
+consumers will be made resilient to broker hiccups.
+
 ## Related
 - `RULES.md §6` (communication rules), `RULES.md §1` factor 9 (disposability/idempotency),
   `RULES.md §13` (tracing across the RabbitMQ hop)

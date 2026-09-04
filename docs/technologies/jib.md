@@ -42,6 +42,51 @@ Sprint 7 alongside the rest of CI/CD hardening (SPRINTS.md Sprint 7).
   Dockerfile is for learning and manual builds, and the two must be kept in sync when a service's
   runtime dependencies change.
 
+## Getting started
+
+**Status today:** `jib-maven-plugin` is not configured in any module's `pom.xml` yet — confirmed by
+grepping every service's `pom.xml` for "jib". There is nothing to build or push with Jib today; it
+is planned to be configured per-service as each service is built, and finalized in Sprint 7 for the
+CI push step (RULES.md §10; SPRINTS.md Sprint 7).
+
+### How to start it
+Not usable yet — no service's `pom.xml` has the plugin. Once configured on a given service, this doc's
+`Why FDP uses it` section describes two commands:
+```
+./mvnw -pl <service> -am jib:dockerBuild
+```
+Builds a local-only image; requires a running Docker daemon (this is the one Jib mode that needs
+one).
+```
+./mvnw -pl <service> -am jib:build
+```
+Builds the image and pushes it straight to a registry; needs registry credentials, but **no** local
+Docker daemon — which is Jib's main selling point per RULES.md §10, and the command CI itself will
+run on merge to `main` (RULES.md §11).
+
+### How to access it
+Not applicable yet — no image exists to pull or run. Once Jib is configured, a `jib:dockerBuild`
+image is accessible the same way any local Docker image is (`docker images`, `docker run`); a
+`jib:build` image is accessible via whichever registry it was pushed to.
+
+### Endpoints it exposes
+Not applicable — Jib is build tooling, not a running service.
+
+### Installation & dependencies
+- Maven plugin: `jib-maven-plugin`, to be added to each service's own `pom.xml` when that service is
+  built (RULES.md §10) — never to the root aggregator, and never version-pinned per-service
+  (RULES.md §4).
+- No local install beyond the Maven wrapper (`./mvnw`); a Docker daemon is only needed for the
+  `jib:dockerBuild` local-image path, not for `jib:build`.
+
+### For newcomers
+The one thing worth knowing before this plugin appears on any service: `jib:build` (the CI/push
+path) needs no Docker daemon at all — that's the whole reason RULES.md §10 picks Jib over a plain
+`docker build` for CI. `jib:dockerBuild` (the local-image variant a developer runs to feed
+`docker-compose.yml`) does need one running locally. Both are still purely theoretical today, since
+no service's `pom.xml` has the plugin — see `./docker.md` for the parallel, hand-written Dockerfile
+path that exists today only for learning/manual builds.
+
 ## Related
 - RULES.md §10, RULES.md §11, RULES.md §4
 - SPRINTS.md Sprint 7 (per-service pipelines finalized, merge-to-`main` image build/push)

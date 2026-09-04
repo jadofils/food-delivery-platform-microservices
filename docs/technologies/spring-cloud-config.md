@@ -44,6 +44,70 @@ instead of embedding it in their own packaged artifact.
   service_healthy` ensures it (and `discovery-server`) are ready before dependents start (RULES.md
   §10).
 
+## Getting started
+
+**Status today:** Live and verified — `config-server` correctly serves both `config-repo/`
+profiles it currently holds (`default`, `docker`). No other service depends on it as a
+Spring Cloud Config *client* yet: `api-gateway` and all five domain services are still bare
+skeletons (`spring-boot-starter` + `spring-boot-starter-test` only), so "all eight services pull
+their config from `config-server` on startup" is what Sprint 1 onward builds toward, not today's
+reality — the first real client is `customer-service`, Sprint 2.
+
+### How to start it
+From the repo root:
+```
+./mvnw -pl config-server -am spring-boot:run
+```
+or package and run the jar directly:
+```
+./mvnw -pl config-server -am package -DskipTests
+java -jar config-server/target/config-server-0.0.1-SNAPSHOT.jar
+```
+No external dependency is required to start it — like `discovery-server`, it needs no database
+and no other running service.
+
+### How to access it
+- **Base URL:** `http://localhost:8888`. There is no dashboard — Config Server is a pure REST API,
+  not a UI.
+- **Config-serving endpoint:** `GET /{application}/{profile}` — `{application}` is the requesting
+  service's `spring.application.name` (today, everything falls back to the literal file named
+  `application.yml`, since no per-service config file exists yet); `{profile}` is
+  `default` or `docker`. Confirmed live:
+  ```
+  curl http://localhost:8888/application/default
+  curl http://localhost:8888/application/docker
+  ```
+  The `docker` profile response correctly layers `application-docker.yml` over (and overriding)
+  `application.yml` — verified by inspecting the `propertySources` array in the response.
+- **Health:** `http://localhost:8888/actuator/health` (once Actuator is added — not yet a
+  dependency of this module; see the pom.xml note below).
+
+### Endpoints it exposes
+| Endpoint | Purpose | Status |
+|---|---|---|
+| `GET /{application}/{profile}` | Serves layered config for a given service + profile | Live |
+| `GET /{application}/{profile}/{label}` | Same, pinned to a specific git label — not meaningful under the native/filesystem backend FDP uses (no git label concept) | Not applicable to this backend |
+| `GET /actuator/health` | Liveness/readiness | Not yet — `spring-boot-starter-actuator` isn't a dependency of `config-server` yet |
+
+`config-server` exposes no business/domain endpoints — like `discovery-server`, its entire surface
+is infrastructure-serving, not a RULES.md §2 service API.
+
+### Installation & dependencies
+- Maven, already in `config-server/pom.xml`: `spring-boot-starter-web`,
+  `org.springframework.cloud:spring-cloud-config-server` (version managed by the root aggregator's
+  `spring-cloud-dependencies` BOM, RULES.md §4). A future client service adds
+  `spring-cloud-starter-config` instead.
+- No local tool install needed beyond a JDK 25 + the vendored Maven wrapper (`./mvnw`).
+
+### For newcomers
+Run the two commands above, then `curl http://localhost:8888/application/default` — you should
+get back one JSON object with a `propertySources` array containing the Eureka `defaultZone` key
+from `config-repo/application.yml`. Try `.../application/docker` next and compare: same key,
+different value, because `application-docker.yml` overrides it. That layering is the entire point
+of this service — every future domain service will fetch exactly this shape of response instead
+of hardcoding its own `application.yml` values. See `./eureka.md` for the other half of the
+platform's spine, and `docs/services/config-server.md` for this service's own reference doc.
+
 ## Related
 - `RULES.md §1` factor 3 (config) and factor 5 (build, release, run), `RULES.md §2` (port 8888)
 - `SPRINTS.md` Sprint 1 (config-server stood up), Sprint 7 (per-environment `application-docker.yml`

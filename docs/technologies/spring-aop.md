@@ -51,6 +51,50 @@ only once an identical aspect is duplicated in three or more services.
   an exception into an HTTP response remains the global handler's job, not an aspect's (RULES.md
   §16, §14).
 
+## Getting started
+
+**Status today:** Partially real, in one specific sense. `common`'s
+`AbstractGlobalExceptionHandler` (`common/src/main/java/food_delivery/Platform/common/error/`,
+Sprint 0) is the AOP-adjacent shared base that a service's future `@RestControllerAdvice` will
+extend — proxy-based AOP infrastructure per RULES.md §16's preference order — and it compiles
+today. But no service has extended it into its own `@RestControllerAdvice` subclass yet, since no
+service has a controller/endpoint at all (every business service is still a bare skeleton,
+`spring-boot-starter` + `spring-boot-starter-test` only). And no *custom* `@Aspect` class exists
+anywhere in the repo (verified: `@Aspect` appears only in `RULES.md` and this doc, nowhere in Java
+source), nor does any service `pom.xml` declare `spring-boot-starter-aop` (verified: no match
+across any `pom.xml`). The idempotency-key aspects and audit/performance-logging aspects described
+above are Sprint 5+ work that hasn't started.
+
+### How to see it running
+AOP isn't a running process, so "starting" it doesn't apply the way it does for infrastructure.
+The closest concrete demonstration, once it exists: a service defines a controller, wires its own
+`@RestControllerAdvice`-annotated class extending `AbstractGlobalExceptionHandler`, and throwing a
+`DomainException` (or letting `MethodArgumentNotValidException` bubble up) from that controller
+shows the proxy-based handling in action — a translated error response instead of a raw stack
+trace. That first wiring is `customer-service`, Sprint 2 onward, once it has an endpoint.
+
+### Endpoints it exposes
+None — Spring AOP is a cross-cutting code mechanism, not a network-addressable thing. It shapes how
+requests are handled once they reach a controller; it doesn't add endpoints of its own.
+
+### Installation & dependencies
+- `common` already depends on `spring-web` (not `spring-boot-starter-web`, see `common/pom.xml`),
+  which is what supplies `@RestControllerAdvice`/`@ExceptionHandler` without pulling in an embedded
+  servlet container — that's live today.
+- `spring-boot-starter-aop` is added to a service's own `pom.xml` only if/when that service needs a
+  genuinely custom `@Aspect` Spring's built-in mechanisms don't cover (RULES.md §16) — no service
+  needs it yet. Per RULES.md §16, a hand-written aspect is promoted to a shared `common` starter
+  only once it's duplicated in three or more services — don't pre-abstract before that.
+
+### For newcomers
+The one concrete, AOP-adjacent thing that exists and compiles today is `common`'s error package —
+look at `common/src/main/java/food_delivery/Platform/common/error/`, especially
+`AbstractGlobalExceptionHandler.java`, to see the shared base every service's advice class will
+extend. Read RULES.md §16 for the hierarchy FDP follows: prefer Spring's built-in AOP mechanisms
+(`@RestControllerAdvice`, `@Valid`/`@Validated`, Micrometer Tracing's auto-instrumentation) first,
+and reach for a custom `@Aspect` only for what those don't already cover — audit/performance
+logging, permission-check logging, idempotency-key enforcement on RabbitMQ listeners.
+
 ## Related
 - RULES.md §13, RULES.md §14, RULES.md §15, RULES.md §16, RULES.md §1 factor 9
 - SPRINTS.md Sprint 5 (idempotent RabbitMQ consumers), Sprint 6 (Micrometer Tracing/MDC)
