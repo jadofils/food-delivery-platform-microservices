@@ -14,8 +14,10 @@ instead of embedding it in their own packaged artifact.
   `config-server` rather than baked into the image at build time (RULES.md §1 factor 5).
 - A service must be able to point at a different Postgres instance by changing config, not code —
   this is factor 4 (backing services), and `config-server` is the mechanism (RULES.md §1 factor 4).
-- Secrets specifically (DB credentials, JWT signing keys, RabbitMQ credentials) are sourced from
-  Config Server's encrypted properties rather than a plaintext file in the repo (RULES.md §8).
+- Secrets specifically (DB credentials, RabbitMQ credentials) never live in `config-repo/` — that
+  directory holds only non-secret structure (RULES.md §1 factor 3); actual credentials are
+  injected via environment variables / Docker secrets at the consuming service, layered on top of
+  what `config-server` serves.
 
 ## Where it's used
 
@@ -26,12 +28,15 @@ instead of embedding it in their own packaged artifact.
 
 ## How it's implemented in FDP
 - `config-server` module: `spring-cloud-config-server` dependency, annotated with
-  `@EnableConfigServer`, running on port `8888` (RULES.md §2; SPRINTS.md Sprint 1).
+  `@EnableConfigServer`, running on port `8888` (RULES.md §2; SPRINTS.md Sprint 1). **Done and
+  verified live** — native (filesystem-backed) profile, `config-repo/` bundled into the service's
+  own jar rather than a separate git repo; `GET /application/{profile}` confirmed serving the
+  right layered properties for both `default` and `docker`.
 - Every other client service depends on `spring-cloud-starter-config` to pull its configuration
   from `config-server` at startup.
-- `application-{profile}.yml` (`local`, `docker`, `staging`, `prod`) selects the environment — it
-  contains structure only, never secrets; secrets come from environment variables / Docker secrets
-  layered on top (RULES.md §1 factor 3).
+- `application-{profile}.yml` (`default`, `docker`, more added as later sprints need them) selects
+  the environment — it contains structure only, never secrets; secrets come from environment
+  variables / Docker secrets layered on top (RULES.md §1 factor 3).
 - Each service also ships an `application-docker.yml` using Docker service hostnames (e.g.
   `jdbc:postgresql://postgres:5432/order_db`) rather than `localhost`, consumed once running under
   `docker-compose` (RULES.md §10; SPRINTS.md Sprint 7).
@@ -40,8 +45,7 @@ instead of embedding it in their own packaged artifact.
   §10).
 
 ## Related
-- `RULES.md §1` factor 3 (config) and factor 5 (build, release, run), `RULES.md §2` (port 8888),
-  `RULES.md §8` (secrets sourced from encrypted Config Server properties)
+- `RULES.md §1` factor 3 (config) and factor 5 (build, release, run), `RULES.md §2` (port 8888)
 - `SPRINTS.md` Sprint 1 (config-server stood up), Sprint 7 (per-environment `application-docker.yml`
   finalized)
 - `./eureka.md`

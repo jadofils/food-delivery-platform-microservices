@@ -1,0 +1,6 @@
+# Shared across every client under the "docker" profile -- Docker service hostnames, not
+# localhost (RULES.md §10). Consumed once running under docker-compose (SPRINTS.md Sprint 7).
+eureka:
+  client:
+    service-url:
+      defaultZone: http://discovery-server:8761/eureka/

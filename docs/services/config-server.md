@@ -16,12 +16,28 @@ domain service, and it can be scaled or restarted independently of the services 
 None. `config-server` has no datastore of its own (RULES.md §2) — it serves configuration, it
 does not persist domain data.
 
-## API surface (planned)
+## API surface
 Exposes Spring Cloud Config Server's standard configuration-serving endpoints so each registered
 client (`discovery-server`, `api-gateway`, `customer-service`, and the rest of
 the eight services) can pull its `application-{profile}.yml` structure at startup. It does not
 expose any domain/business REST API — its surface is purely configuration delivery per RULES.md
 §1 (factor 3) and §2.
+
+**Verified live:** `GET /application/default` and `GET /application/docker` against the packaged
+jar on `:8888` — `default` returns only `config-repo/application.yml` (Eureka `defaultZone`
+pointed at `localhost:8761`); `docker` returns `config-repo/application-docker.yml` layered over
+(and overriding) `application.yml`, correctly resolving to the `discovery-server` container
+hostname.
+
+## Config backend
+Native (filesystem-backed) profile: `spring.cloud.config.server.native.search-locations=classpath:/config-repo`,
+with the config files bundled directly into this service's own jar under
+`src/main/resources/config-repo/` rather than pulled from a separate git repository. Chosen over a
+git-backed backend as the simpler option for a monorepo where the config content isn't independently
+versioned from the code that consumes it (RULES.md §4's "don't over-engineer ahead of need"). A file
+named `application.yml` applies to every client regardless of `spring.application.name`; a
+per-service override (`<service-name>.yml` / `<service-name>-<profile>.yml`) gets added in the
+sprint that introduces that service's first environment-specific config need.
 
 ## Depends on / depended on by
 - **Depends on:** nothing at the platform level — it is one of the two foundational services

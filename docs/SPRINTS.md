@@ -62,8 +62,18 @@ the bullets below describe what actually ships now, not the original plan.
   version note directly in `pom.xml`: no Spring Cloud release is binary-compatible with Boot
   4.1.1 yet (even the newest milestone references a Boot package path that moved in 4.1), so this
   runs on a Spring Cloud snapshot as a deliberate, documented, temporary compromise.
-- `config-server` stood up serving externalized config to registered clients. *(Not yet
-  implemented — same sprint, next.)*
+- `config-server` stood up serving externalized config to registered clients. **Done and verified
+  live:** `@EnableConfigServer`, native (filesystem-backed) profile reading from a `config-repo/`
+  bundled into the service's own jar rather than a separate git repo (RULES.md §4's "don't
+  over-engineer ahead of need" — see the comment in `config-server/src/main/resources/application.properties`),
+  serving on `:8888`. A shared `application.yml` (Eureka `defaultZone` pointed at `localhost` for
+  local dev) plus an `application-docker.yml` override (same key, pointed at the `discovery-server`
+  container hostname) confirmed against the real REST API: `GET /application/default` returns only
+  the local-profile value, `GET /application/docker` returns the docker-profile value correctly
+  layered over (and overriding) the default. Required tracking down Spring Cloud Config Server's
+  actual `@EnableConfigServer` package on the resolved snapshot jar via `jar tf` — it lives at
+  `org.springframework.cloud.config.server.EnableConfigServer`, not the `.config` subpackage its
+  Boot-3-era location would suggest.
 - **Keycloak** (RULES.md §8) stood up as the platform's identity provider:
   - `docker-compose.yml` service `keycloak`, its own `keycloak_db` schema in the shared Postgres
     (FDP's Flyway migrations never touch it).
@@ -84,7 +94,8 @@ the bullets below describe what actually ships now, not the original plan.
   a service to validate against yet, since there's no `identity-service` anymore to have been
   "first."
 
-**Exit criteria:** `discovery-server` and `config-server` are both reachable; Keycloak's `fdp`
+**Exit criteria:** `discovery-server` and `config-server` are both reachable (both done and
+verified live above); Keycloak's `fdp`
 realm imports successfully from a clean `docker compose up`; each of the four demo accounts in
 `credentials.md` can obtain a token carrying exactly its role's permissions, confirmed against
 Keycloak's token endpoint directly (no FDP service required yet).

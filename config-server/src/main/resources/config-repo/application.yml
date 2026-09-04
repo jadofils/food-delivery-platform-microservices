@@ -1,0 +1,11 @@
+# Shared across every client and every profile -- Spring Cloud Config's naming convention:
+# a file literally named "application.yml" applies regardless of which service asks
+# (RULES.md §1 factor 3). Per-service overrides go in a file named after that service
+# (<service-name>.yml / <service-name>-<profile>.yml), added in the sprint that needs it.
+#
+# Local-profile default: discovery-server reachable at localhost. See application-docker.yml
+# for the docker-network equivalent.
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
