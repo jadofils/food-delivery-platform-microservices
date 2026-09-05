@@ -15,12 +15,93 @@
 
 	<dependencies>
 		<dependency>
+			<groupId>food-delivery.Platform</groupId>
+			<artifactId>common</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter</artifactId>
+			<artifactId>spring-boot-starter-web</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-jpa</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+		<!-- Version managed by the root aggregator's spring-cloud-dependencies BOM import -->
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.postgresql</groupId>
+			<artifactId>postgresql</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-core</artifactId>
+		</dependency>
+		<!-- Boot 4.1 split Flyway's autoconfiguration out of the core autoconfigure jar into this
+			 dedicated module; flyway-core alone no longer gets Flyway to run automatically on
+			 startup, the same kind of module-split surprise config-server's @EnableConfigServer
+			 import hit (SPRINTS.md Sprint 1). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-flyway</artifactId>
+		</dependency>
+		<!-- flyway-database-postgresql: Flyway 10+ split Postgres-specific support out of
+			 flyway-core into its own module; without it Flyway fails to recognize the Postgres
+			 database type at migrate time. -->
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
+		</dependency>
+		<!-- Version managed by the root aggregator's dependencyManagement -->
+		<dependency>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+			<optional>true</optional>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- Boot 4.1 split @AutoConfigureMockMvc and friends out of spring-boot-test-autoconfigure
+			 into this dedicated module (org.springframework.boot.webmvc.test.autoconfigure);
+			 spring-boot-starter-test alone no longer brings it in. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-webmvc-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!--
+			testcontainers-postgresql only, not testcontainers-junit-jupiter: AbstractIntegrationTest
+			uses the singleton-container pattern (a static field started once, never stopped via the
+			JUnit5 @Testcontainers/@Container lifecycle — see its own class comment for why), so the
+			JUnit5 integration module isn't needed. Version managed transitively by
+			spring-boot-starter-parent's own testcontainers.version property/BOM import.
+		-->
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-postgresql</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
@@ -30,6 +111,27 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+			<!--
+				*IT.java classes (CustomerControllerIT, AddressControllerIT) are Testcontainers-backed
+				integration tests (RULES.md Sec9). Surefire's default include pattern (*Test.java,
+				*Tests.java, *TestCase.java) skips *IT.java on purpose, since that naming convention is
+				Failsafe's, bound to the integration-test/verify phases rather than plain `test`. This
+				is exactly what .github/workflows/ci.yml's comment already anticipated: `mvn verify`
+				(not `mvn test`) picks these up with no CI workflow change needed once this plugin
+				exists.
+			-->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
+				<executions>
+					<execution>
+						<goals>
+							<goal>integration-test</goal>
+							<goal>verify</goal>
+						</goals>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>

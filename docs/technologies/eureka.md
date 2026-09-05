@@ -55,13 +55,14 @@ host/port.
 
 ## Getting started
 
-**Status today:** Live and verified — `discovery-server` is a fully working Eureka registry.
-Every other service (`api-gateway`, `customer-service`, `restaurant-service`, `order-service`,
-`delivery-service`, `notification-service`) is still a bare skeleton (`spring-boot-starter` +
-`spring-boot-starter-test` only, per each module's own `pom.xml`) — none of them carries the
-Eureka *client* starter yet, so "all eight services register on startup" (see `Where it's used`
-above) is what Sprint 1 onward builds toward, not today's reality. The first real client is
-`customer-service`, Sprint 2.
+**Status today:** Live and verified — `discovery-server` is a fully working Eureka registry, and
+`customer-service` (Sprint 2) is the first real client: it carries
+`spring-cloud-starter-netflix-eureka-client` and registers on startup, confirmed against a real
+running `discovery-server`. Every other service (`api-gateway`, `restaurant-service`,
+`order-service`, `delivery-service`, `notification-service`) is still a bare skeleton
+(`spring-boot-starter` + `spring-boot-starter-test` only, per each module's own `pom.xml`) — none
+of them carries the Eureka client starter yet, so "all eight services register on startup" (see
+`Where it's used` above) is still in progress, not complete.
 
 ### How to start it
 From the repo root:

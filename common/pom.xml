@@ -45,6 +45,21 @@
 			<artifactId>jakarta.servlet-api</artifactId>
 			<scope>provided</scope>
 		</dependency>
+		<!--
+			provided: KeycloakRoleConverter/JwtClaims/RestAuthenticationEntryPoint/RestAccessDeniedHandler
+			(common.security.jwt) compile against Jwt/Converter/AuthenticationEntryPoint/
+			AccessDeniedHandler types, but the actual OAuth2 Resource Server runtime wiring
+			(JwtDecoder, the SecurityFilterChain itself) belongs to each service's own SecurityConfig,
+			not common — RULES.md §3 only wants the claim-reading/converter logic shared, not a
+			common-owned filter chain. "provided" keeps this off the runtime classpath of any
+			consumer that depends on common without adding it itself (e.g. config-server,
+			discovery-server never touch this package).
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+			<scope>provided</scope>
+		</dependency>
 		<!-- tools.jackson, not com.fasterxml.jackson: Boot 4 ships Jackson 3.x, a real rename
 			 (ObjectMapper/JsonSerializer->ValueSerializer/SerializerProvider->SerializationContext
 			 all moved groupId+package). Using the classic com.fasterxml.jackson.databind types

@@ -8,6 +8,7 @@ import org.slf4j.MDC;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import food_delivery.Platform.common.error.ApiErrorResponse.FieldError;
 import jakarta.servlet.http.HttpServletRequest;
@@ -96,6 +97,26 @@ public abstract class AbstractGlobalExceptionHandler {
 				.toList();
 		ApiErrorResponse body = ApiErrorResponse.ofValidation("Validation failed.", request.getRequestURI(),
 				traceId(), fieldErrors);
+		return ResponseEntity.status(body.status()).body(body);
+	}
+
+	/**
+	 * A path variable or request parameter couldn't be converted to the type the handler method
+	 * declares — e.g. {@code GET /api/customers/not-a-number} against a {@code @PathVariable Long
+	 * id}. Without this handler the conversion failure propagates as an unmapped exception and
+	 * gets reported as a {@code 500}, which is wrong: the caller sent a malformed request, this
+	 * service did nothing wrong. Maps to the same {@code VALIDATION_FAILED} shape as a Bean
+	 * Validation failure (RULES.md §15) since it's the same category of problem — a single bad
+	 * input value — even though Spring raises it before Bean Validation ever runs.
+	 */
+	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
+	public ResponseEntity<ApiErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex,
+			HttpServletRequest request) {
+		String traceId = traceId();
+		String requiredType = ex.getRequiredType() == null ? "the expected type" : ex.getRequiredType().getSimpleName();
+		FieldError fieldError = new FieldError(ex.getName(), "must be a valid " + requiredType);
+		ApiErrorResponse body = ApiErrorResponse.ofValidation("Validation failed.", request.getRequestURI(), traceId,
+				List.of(fieldError));
 		return ResponseEntity.status(body.status()).body(body);
 	}
 

@@ -1,0 +1,560 @@
+{
+	"info": {
+		"_postman_id": "fdp-customer-service-collection",
+		"name": "FDP - customer-service (auth + registration)",
+		"description": "Exercises Keycloak-issued auth and customer-service's registration/profile/address endpoints end to end, against a locally running stack (`docker compose up -d postgres keycloak`, then run `customer-service` on :8082). Import the sibling `FDP.postman_environment.json` and select it before running.\n\nRun order: **1. Get Tokens** first (every other folder's requests reuse the tokens it saves into environment variables), then the rest in numeric folder order. See `docs/services/customer-service.md` and `credentials.md` for background.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Get Tokens (Keycloak)",
+			"description": "Keycloak issues tokens directly — there is no FDP-owned /auth/login endpoint (RULES.md §8; identity-service was retired in favor of Keycloak). Each request here saves its access_token into an environment variable the later folders reuse.",
+			"item": [
+				{
+					"name": "Get Customer Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const body = pm.response.json();",
+									"pm.test('token issued', () => pm.expect(body.access_token).to.be.a('string'));",
+									"pm.environment.set('customerToken', body.access_token);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{ "key": "grant_type", "value": "password" },
+								{ "key": "client_id", "value": "{{clientId}}" },
+								{ "key": "username", "value": "{{customerUsername}}" },
+								{ "key": "password", "value": "{{customerPassword}}" }
+							]
+						},
+						"url": {
+							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+							"host": ["{{keycloakUrl}}"],
+							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+						}
+					}
+				},
+				{
+					"name": "Get Admin Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const body = pm.response.json();",
+									"pm.test('token issued', () => pm.expect(body.access_token).to.be.a('string'));",
+									"pm.environment.set('adminToken', body.access_token);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{ "key": "grant_type", "value": "password" },
+								{ "key": "client_id", "value": "{{clientId}}" },
+								{ "key": "username", "value": "{{adminUsername}}" },
+								{ "key": "password", "value": "{{adminPassword}}" }
+							]
+						},
+						"url": {
+							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+							"host": ["{{keycloakUrl}}"],
+							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+						}
+					}
+				},
+				{
+					"name": "Get Restaurant Owner Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const body = pm.response.json();",
+									"pm.test('token issued', () => pm.expect(body.access_token).to.be.a('string'));",
+									"pm.environment.set('restaurantOwnerToken', body.access_token);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{ "key": "grant_type", "value": "password" },
+								{ "key": "client_id", "value": "{{clientId}}" },
+								{ "key": "username", "value": "{{restaurantOwnerUsername}}" },
+								{ "key": "password", "value": "{{restaurantOwnerPassword}}" }
+							]
+						},
+						"url": {
+							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+							"host": ["{{keycloakUrl}}"],
+							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+						}
+					}
+				},
+				{
+					"name": "Get Delivery Agent Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const body = pm.response.json();",
+									"pm.test('token issued', () => pm.expect(body.access_token).to.be.a('string'));",
+									"pm.environment.set('deliveryAgentToken', body.access_token);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{ "key": "grant_type", "value": "password" },
+								{ "key": "client_id", "value": "{{clientId}}" },
+								{ "key": "username", "value": "{{deliveryAgentUsername}}" },
+								{ "key": "password", "value": "{{deliveryAgentPassword}}" }
+							]
+						},
+						"url": {
+							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+							"host": ["{{keycloakUrl}}"],
+							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+						}
+					}
+				},
+				{
+					"name": "Wrong Password -> 401 (Keycloak itself)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('rejected with 401', () => pm.response.to.have.status(401));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{ "key": "grant_type", "value": "password" },
+								{ "key": "client_id", "value": "{{clientId}}" },
+								{ "key": "username", "value": "{{customerUsername}}" },
+								{ "key": "password", "value": "definitely-wrong" }
+							]
+						},
+						"url": {
+							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+							"host": ["{{keycloakUrl}}"],
+							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "2. Registration & Self-Service Profile",
+			"description": "Keycloak already handled account creation (folder 1) — this is FDP's own domain-level 'registration': completing a customer profile on top of an already-authenticated identity (RULES.md §8). email/firstName/lastName come from the token, never the request body.",
+			"item": [
+				{
+					"name": "Get My Profile - before registering (expect 404)",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('not registered yet', () => pm.response.to.have.status(404));"] }
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{restaurantOwnerToken}}" }],
+						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] },
+						"description": "Uses the restaurant-owner demo account on purpose: it's never called Register below, so this reliably 404s without needing a throwaway account."
+					}
+				},
+				{
+					"name": "Register (POST /me)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('created', () => pm.response.to.have.status(201));",
+									"const body = pm.response.json();",
+									"pm.test('email is masked', () => pm.expect(body.email).to.match(/^.\\*{5}.$/));",
+									"pm.test('phoneNumber is masked', () => pm.expect(body.phoneNumber).to.match(/^.\\*{5}.$/));",
+									"pm.environment.set('customerId', body.id);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"+15551234567\"\n}", "options": { "raw": { "language": "json" } } },
+						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+					}
+				},
+				{
+					"name": "Register again -> 409 Conflict",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('conflict on repeat registration', () => pm.response.to.have.status(409));"] }
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"+15551234567\"\n}", "options": { "raw": { "language": "json" } } },
+						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+					}
+				},
+				{
+					"name": "Register with invalid phone -> 400 Validation",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('validation failed', () => pm.response.to.have.status(400));",
+									"const body = pm.response.json();",
+									"pm.test('names the bad field', () => pm.expect(body.errors[0].field).to.eql('phoneNumber'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{deliveryAgentToken}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"not-a-phone\"\n}", "options": { "raw": { "language": "json" } } },
+						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+					}
+				},
+				{
+					"name": "Get My Profile",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));"] }
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+					}
+				},
+				{
+					"name": "Update My Profile",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));",
+									"const body = pm.response.json();",
+									"pm.test('phone changed (still masked)', () => pm.expect(body.phoneNumber).to.match(/^.\\*{5}.$/));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"+15559998888\"\n}", "options": { "raw": { "language": "json" } } },
+						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "3. Delivery Addresses (Self-Service)",
+			"description": "Entirely self-service — ownership is always resolved from the caller's own token, never a client-supplied customer id (RULES.md §8).",
+			"item": [
+				{
+					"name": "Add Address",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('created', () => pm.response.to.have.status(201));",
+									"pm.environment.set('addressId', pm.response.json().id);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"label\": \"Home\",\n  \"street\": \"12 Kigali Ave\",\n  \"city\": \"Kigali\",\n  \"state\": \"Kigali City\",\n  \"postalCode\": \"00000\",\n  \"country\": \"Rwanda\",\n  \"isDefault\": true\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{customerServiceUrl}}/api/customers/me/addresses", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me", "addresses"] }
+					}
+				},
+				{
+					"name": "List My Addresses",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.test('has at least one', () => pm.expect(pm.response.json().length).to.be.above(0));"] }
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+						"url": { "raw": "{{customerServiceUrl}}/api/customers/me/addresses", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me", "addresses"] }
+					}
+				},
+				{
+					"name": "Get One Address",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));"] }
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me/addresses/{{addressId}}",
+							"host": ["{{customerServiceUrl}}"],
+							"path": ["api", "customers", "me", "addresses", "{{addressId}}"]
+						}
+					}
+				},
+				{
+					"name": "Update Address",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));"] }
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"label\": \"Work\",\n  \"street\": \"5 Downtown Rd\",\n  \"city\": \"Kigali\",\n  \"state\": \"Kigali City\",\n  \"postalCode\": \"00001\",\n  \"country\": \"Rwanda\",\n  \"isDefault\": false\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me/addresses/{{addressId}}",
+							"host": ["{{customerServiceUrl}}"],
+							"path": ["api", "customers", "me", "addresses", "{{addressId}}"]
+						}
+					}
+				},
+				{
+					"name": "Another Customer Cannot See This Address -> 404",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('not found for a different owner', () => pm.response.to.have.status(404));"] }
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{deliveryAgentToken}}" }],
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me/addresses/{{addressId}}",
+							"host": ["{{customerServiceUrl}}"],
+							"path": ["api", "customers", "me", "addresses", "{{addressId}}"]
+						},
+						"description": "delivery-agent@fdp.test has never registered a customer profile, so it has no addresses either — the ownership check 404s the same way it would for a genuinely different customer."
+					}
+				},
+				{
+					"name": "Delete Address",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('no content', () => pm.response.to.have.status(204));"] }
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me/addresses/{{addressId}}",
+							"host": ["{{customerServiceUrl}}"],
+							"path": ["api", "customers", "me", "addresses", "{{addressId}}"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "4. Admin Operations",
+			"description": "Gated by the user:read permission (RULES.md §8) — only the seeded ADMIN account has it (see docker/keycloak/fdp-realm.json). Run folder 2's Register request first so {{customerId}} is populated.",
+			"item": [
+				{
+					"name": "Get Any Customer By Id (Admin)",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));"] }
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/{{customerId}}",
+							"host": ["{{customerServiceUrl}}"],
+							"path": ["api", "customers", "{{customerId}}"]
+						}
+					}
+				},
+				{
+					"name": "List All Customers (Admin)",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.test('paged shape', () => pm.expect(pm.response.json()).to.have.property('content'));"] }
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+						"url": { "raw": "{{customerServiceUrl}}/api/customers", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "5. Negative / Security Tests",
+			"description": "The permission boundary a plain CUSTOMER never crosses, and the failure shapes for a missing/invalid token.",
+			"item": [
+				{
+					"name": "No Token -> 401",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('unauthorized', () => pm.response.to.have.status(401));",
+									"pm.test('shared error envelope', () => pm.expect(pm.response.json().error).to.eql('UNAUTHORIZED'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+					}
+				},
+				{
+					"name": "Garbage Token -> 401",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('unauthorized', () => pm.response.to.have.status(401));"] }
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer not-a-real-jwt" }],
+						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+					}
+				},
+				{
+					"name": "Customer Cannot Get Another Customer By Id -> 403",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('forbidden, not unauthorized', () => pm.response.to.have.status(403));",
+									"pm.test('shared error envelope', () => pm.expect(pm.response.json().error).to.eql('FORBIDDEN'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/{{customerId}}",
+							"host": ["{{customerServiceUrl}}"],
+							"path": ["api", "customers", "{{customerId}}"]
+						},
+						"description": "customer@fdp.test lacks user:read (see docker/keycloak/fdp-realm.json) — this is CUSTOMER, not ADMIN, so it's rejected even for its OWN id fetched via the admin route, since that route doesn't special-case self-lookup."
+					}
+				},
+				{
+					"name": "Customer Cannot List All Customers -> 403",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('forbidden', () => pm.response.to.have.status(403));"] }
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+						"url": { "raw": "{{customerServiceUrl}}/api/customers", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers"] }
+					}
+				}
+			]
+		}
+	]
+}

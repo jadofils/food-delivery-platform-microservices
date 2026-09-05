@@ -106,14 +106,32 @@ Keycloak's token endpoint directly (no FDP service required yet).
 
 **Goal:** first two domain services decomposed from the monolith, each independently deployable.
 
-- `customer-service` (`customer_db`): customer profiles, delivery addresses.
-- `restaurant-service` (`restaurant_db`): restaurants, menus, menu items.
+- `customer-service` (`customer_db`): customer profiles, delivery addresses. **Done and verified
+  live:** `Customer`/`Address` JPA entities (`addresses` LAZY, `@EntityGraph` for the one query
+  that needs them loaded — no unnecessary eager loading), Flyway migrations, self-service
+  registration/profile/address endpoints (`/api/customers/me/**`, ownership resolved from the
+  caller's own Keycloak token, never a client-supplied id) plus `user:read`-gated admin endpoints
+  (`/api/customers/{id}`, `/api/customers`), `spring-boot-starter-oauth2-resource-server` wired
+  against Keycloak's JWKS via a shared `common.security.jwt.KeycloakRoleConverter`, `@Masked`
+  email/phone on every response, Swagger UI at `/swagger-ui/index.html`. Registers with Eureka on
+  startup (verified against the real `discovery-server`); pulling shared config from
+  `config-server` is a deliberate scope cut for this pass, not yet wired (see
+  `docs/services/customer-service.md`). Exercised end to end against real Keycloak-issued tokens
+  and a real `customer_db` — 11 Testcontainers-backed test classes plus a 23-request Postman
+  collection (`postman/FDP-customer-service.postman_collection.json`), both green. Surfaced and
+  fixed one real bug in the process: a malformed numeric path variable (e.g.
+  `GET /api/customers/not-a-number`) was falling through to a bare 500 instead of a proper 400 —
+  `common`'s `AbstractGlobalExceptionHandler` now handles `MethodArgumentTypeMismatchException`
+  explicitly, for every service, not just this one.
+- `restaurant-service` (`restaurant_db`): restaurants, menus, menu items. *(Not yet
+  implemented — same sprint, next.)*
 - Both register with Eureka, pull config from `config-server`, expose their own REST API and
   OpenAPI spec (→ `docs/api-contracts/`).
 - Testcontainers-backed CI pipeline for each.
 
 **Exit criteria:** both services run independently, each against its own database, with no shared
-tables and no direct database access from any other module.
+tables and no direct database access from any other module. (`customer-service` satisfies this
+today; `restaurant-service` does not exist yet.)
 
 ---
 

@@ -46,25 +46,27 @@ support — FDP owns no custom token-issuance or token-parsing code.
 
 ## Getting started
 
-**Status today:** Token *issuance* is fully live — Keycloak issues real, verified-working JWTs
-today (see `./keycloak.md` and `credentials.md`). Token *validation* in FDP code has not started:
-zero services carry `spring-boot-starter-oauth2-resource-server` (every service, `api-gateway`
-included, is still a bare `spring-boot-starter` + `spring-boot-starter-test` skeleton). This file
-covers the token format and the validation approach FDP will use, not a separately running thing —
-there is no "JWT service" in this system.
+**Status today:** Both halves are live. Token *issuance* — Keycloak issues real, verified-working
+JWTs (see `./keycloak.md` and `credentials.md`). Token *validation* — `customer-service` (Sprint 2)
+carries `spring-boot-starter-oauth2-resource-server` and correctly validates them: a missing/invalid
+token gets `401`, a valid token lacking the required permission gets `403`, and a valid token with
+the right permission succeeds — all confirmed against real tokens for real seeded demo accounts.
+`api-gateway` and the remaining domain services are still bare skeletons with no Resource Server
+dependency yet. This file covers the token format and the validation approach, not a separately
+running thing — there is no "JWT service" in this system; see `docs/services/customer-service.md`
+for the first place validation actually happens.
 
 ### How to start it
-There's nothing to start — JWT isn't a running process, it's a token format Keycloak issues and
-(eventually) FDP services validate. The only thing runnable today is obtaining a real token, which
-means starting Keycloak itself:
+There's nothing to start for JWT itself — it's a token format, not a running process. To exercise
+the full issue-then-validate flow, start both halves:
 ```
 docker compose up -d postgres keycloak
+./mvnw -pl customer-service -am spring-boot:run
 ```
-See `./keycloak.md` for the full startup sequence.
+See `./keycloak.md` and `docs/services/customer-service.md` for each half's own startup details.
 
 ### How to access it
-Obtain a token the same way `credentials.md` documents, since that's the only "JWT" thing that's
-actually live right now:
+Obtain a token the same way `credentials.md` documents:
 ```
 POST http://localhost:8180/realms/fdp/protocol/openid-connect/token
 Content-Type: application/x-www-form-urlencoded
@@ -76,9 +78,11 @@ from a shell:
 ```
 echo <access_token> | cut -d. -f2 | base64 -d
 ```
-Look for `resource_access.fdp-api.roles` — that's the claim path every future
-`Converter<Jwt, ? extends AbstractAuthenticationToken>` (see below) and `@PreAuthorize` check will
-read.
+Look for `resource_access.fdp-api.roles` — that's the claim path
+`common.security.jwt.KeycloakRoleConverter` reads and `@PreAuthorize("hasAuthority('user:read')")`
+-style checks act on, both real and running in `customer-service` today. Send that same token as
+`Authorization: Bearer <access_token>` to `http://localhost:8082/api/customers/me` to see it
+validated live.
 
 ### Endpoints it exposes
 None of FDP's own — JWT is a token format, not a service with an API surface. The endpoints that
@@ -87,25 +91,26 @@ actually issue and publish keys for these tokens belong to Keycloak; see `./keyc
 `GET /realms/fdp/protocol/openid-connect/certs`) rather than duplicating it here.
 
 ### Installation & dependencies
-- Not present in any service's `pom.xml` today. `spring-boot-starter-oauth2-resource-server` is
-  planned for `api-gateway` first (Sprint 4, edge validation) and then each domain service that
-  exposes protected endpoints (Sprint 2 onward, alongside that service's own build), per RULES.md
-  §8 and SPRINTS.md.
-- The `Converter<Jwt, ? extends AbstractAuthenticationToken>` that maps
-  `resource_access.fdp-api.roles` into Spring Security `GrantedAuthority`s is planned as a
-  `common`-module class (RULES.md §3's shared-vs-local table) — not built yet, since no service
-  validates a token yet to need it.
-- No local tool install needed to obtain/inspect a token today beyond a REST client (`curl`,
-  Postman) and, optionally, a browser to use jwt.io.
+- `customer-service/pom.xml` declares `spring-boot-starter-oauth2-resource-server` — the first
+  real consumer. `api-gateway` (Sprint 4, edge validation) and the remaining domain services add
+  the same dependency as they're built, per RULES.md §8 and SPRINTS.md.
+- `common.security.jwt.KeycloakRoleConverter` — the `Converter<Jwt, ? extends
+  AbstractAuthenticationToken>` that maps `resource_access.fdp-api.roles` into Spring Security
+  `GrantedAuthority`s — is built and live in `common` (RULES.md §3's shared-vs-local table), wired
+  into `customer-service`'s `SecurityConfig`. Every future validating service reuses this same
+  class rather than re-implementing the claim path.
+- No local tool install needed to obtain/inspect a token beyond a REST client (`curl`, Postman)
+  and, optionally, a browser to use jwt.io.
 
 ### For newcomers
-You can get a real, working token from Keycloak today — that part of the identity story is done
-and verified (see `./keycloak.md`). What doesn't exist yet is anywhere in FDP to *send* that token:
-no service checks the `Authorization: Bearer` header, because none has added
-`spring-boot-starter-oauth2-resource-server`. That's the next milestone, starting with whichever
-service in Sprint 2 builds its first protected endpoint, and continuing through `api-gateway` in
-Sprint 4. Start with `./keycloak.md`'s "For newcomers" section to get a token, then come back here
-once a real validating endpoint exists to test against.
+Get a real, working token from Keycloak (see `./keycloak.md`), then send it to a real, working
+validating endpoint: `GET http://localhost:8082/api/customers/me` with
+`Authorization: Bearer <access_token>`. Try it with `customer@fdp.test`'s token (succeeds), then
+with no header at all (`401`), then with `admin@fdp.test`'s token against
+`GET http://localhost:8082/api/customers` — a `user:read`-gated route `customer@fdp.test` gets
+`403` on but `admin@fdp.test` doesn't. That's the whole validation story working end to end today,
+not a preview of it. `postman/FDP-customer-service.postman_collection.json` automates exactly
+this sequence.
 
 ## Related
 - RULES.md §3, RULES.md §8

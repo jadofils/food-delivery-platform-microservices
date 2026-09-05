@@ -49,13 +49,14 @@ any service that depends on it (SPRINTS.md, Sprint 0).
 
 ## Getting started
 
-**Status today:** The container is live (part of the Sprint 0 `docker-compose.yml` skeleton) — but
-no service reads or writes to it yet. `customer-service`, `restaurant-service`, `order-service`,
-and `delivery-service` are all still bare skeletons (`spring-boot-starter` +
-`spring-boot-starter-test` only) with no `spring-boot-starter-data-jpa`, no datasource config, and
-no Flyway migrations. The first real consumer is `customer-service`/`restaurant-service`, Sprint 2.
-Keycloak *does* use this container today (`keycloak_db`), but as external infrastructure managing
-its own schema — not one of FDP's own service databases (RULES.md §8).
+**Status today:** Live and in real use — `customer-service` (Sprint 2) owns `customer_db`, with
+Flyway-migrated `customers`/`addresses` tables, `spring-boot-starter-data-jpa`, and
+`spring.jpa.open-in-view=false` (RULES.md — "no unnecessary eager loading"). Confirmed against a
+real running Postgres via both Testcontainers-backed tests and manual `psql`/Postman verification.
+`restaurant-service`, `order-service`, and `delivery-service` are still bare skeletons with no
+datasource config or migrations of their own yet. Keycloak also uses this container
+(`keycloak_db`), but as external infrastructure managing its own schema — not one of FDP's own
+service databases (RULES.md §8).
 
 ### How to start it
 From the repo root:
@@ -91,21 +92,22 @@ is documented in that service's own `docs/services/<service-name>.md`, once buil
 
 ### Installation & dependencies
 - Docker image: `postgres:17-alpine` (pinned in `docker-compose.yml`).
-- Each Postgres-backed service will declare `spring-boot-starter-data-jpa` in its own `pom.xml`
-  once built (RULES.md §4) — not yet present in any service's POM today. The JDBC driver itself
-  comes transitively via `spring-boot-starter-data-jpa`'s Postgres auto-configuration, no separate
-  driver dependency needed.
+- `customer-service` declares `spring-boot-starter-data-jpa` in its own `pom.xml` (RULES.md §4);
+  `restaurant-service`/`order-service`/`delivery-service` will do the same once built. The JDBC
+  driver itself comes transitively via `spring-boot-starter-data-jpa`'s Postgres auto-configuration,
+  no separate driver dependency needed (confirmed: `org.postgresql:postgresql` never appears
+  explicitly in `customer-service/pom.xml`, only pulled in transitively).
 - No local tool install is required to *run* Postgres (it's fully containerized); installing the
   `psql` CLI client on the host is optional, only useful for manual inspection.
 
 ### For newcomers
-Run `docker compose up -d postgres`, then connect with `psql -h localhost -U fdp -d fdp` (or any
-of the per-service databases `init-databases.sql` created — check that file for the exact list)
-to confirm it's up and the expected databases exist (`\l` lists them). There's nothing to query
-yet: no service has created a single table, since Flyway migrations don't exist until Sprint 2.
-This container existing and being healthy is the Sprint 0 exit criterion being satisfied, not a
-sign anything domain-specific is running yet. See `./flyway.md` for how schemas will actually get
-created, and `./mongodb.md` for the platform's other datastore (`notification-service`).
+Run `docker compose up -d postgres`, then connect with `psql -h localhost -U fdp -d customer_db` to
+see real tables: `\dt` lists `customers`, `addresses`, and Flyway's own `flyway_schema_history`.
+`restaurant_db`/`order_db`/`delivery_db` don't exist yet — `docker/postgres/init-databases.sql`
+only creates a database in the sprint that actually needs it (its own governing comment), and
+those three services haven't been built yet. See `./flyway.md` for how `customer_db`'s schema
+actually got created, and `./mongodb.md` for the platform's other datastore
+(`notification-service`).
 
 ## Related
 - RULES.md §1 (factor 4, factor 10, factor 12), RULES.md §2, RULES.md §5, RULES.md §9, RULES.md §10

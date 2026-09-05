@@ -49,22 +49,21 @@ validate request DTOs.
 
 ## Getting started
 
-**Status today:** One real, compiled-today fact: `common`'s `pom.xml` already declares
-`spring-boot-starter-validation` (verified — see the dependency block in `common/pom.xml`) as a
-baseline every future service inherits by depending on `common`. Beyond that, zero validated DTOs
-exist anywhere in the codebase — no service has a request DTO with `@NotNull`/`@Valid`/etc. yet,
-because no service has a controller or endpoint at all. `customer-service`, `order-service`, and
-the rest are still bare skeletons (`spring-boot-starter` + `spring-boot-starter-test` only, verified
-by reading their `pom.xml` files).
+**Status today:** Live and verified — `customer-service` (Sprint 2) is the first real consumer.
+`CustomerRegistrationRequest`/`CustomerUpdateRequest`/`AddressRequest` use `@NotBlank`/`@Size`/
+`@Pattern`, wired via `@Valid @RequestBody`; an invalid payload (e.g. a malformed `phoneNumber`)
+returns a `400` with a `VALIDATION_FAILED` envelope and one `errors[]` entry naming the bad field —
+confirmed against a real running instance, and covered by both the Testcontainers-backed
+integration tests and the checked-in Postman collection (`postman/FDP-customer-service.postman_collection.json`).
+Every other service (`restaurant-service`, `order-service`, `delivery-service`,
+`notification-service`) is still a bare skeleton with no DTOs of its own yet.
 
 ### How to see it working
-There's nothing to run today. Once the first service defines a request DTO annotated with
-constraints (`@NotNull`, `@NotBlank`, `@Size`, `@Positive`, `@Email`, or a custom `@Constraint`)
-and a controller method takes it as `@Valid @RequestBody`, posting an invalid payload will trigger
-`MethodArgumentNotValidException`, translated by that service's `@RestControllerAdvice` (built on
-`common`'s `AbstractGlobalExceptionHandler`) into the shared error envelope with one `errors[]`
-entry per invalid field (RULES.md §14, §15). That first DTO belongs to `customer-service` or
-`restaurant-service`, Sprint 2 onward.
+Run `customer-service` (see `docs/services/customer-service.md`) and `POST /api/customers/me`
+with an invalid `phoneNumber` — the response is exactly the shape described above. See
+`common/src/main/java/food_delivery/Platform/common/error/AbstractGlobalExceptionHandler.java`
+for the translation itself: `MethodArgumentNotValidException`/`ConstraintViolationException` both
+go through it into the shared `ApiErrorResponse` envelope (RULES.md §14, §15).
 
 ### Endpoints it exposes
 None — Bean Validation is a library mechanism triggered declaratively (`@Valid`/`@Validated`) on a

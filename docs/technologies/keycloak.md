@@ -58,11 +58,15 @@ JWKS endpoint for anyone to validate the tokens it issues.
 ## Getting started
 
 **Status today:** Live and verified — realm, client, roles, and all four demo users import
-correctly and issue real tokens. No FDP service validates those tokens yet: every domain service
-and `api-gateway` are still bare skeletons with no `spring-boot-starter-oauth2-resource-server`
-dependency, so "enforcement via native Spring Security" (§8) is Sprint 2 onward's work, not
-today's reality. Today Keycloak works standalone — you can obtain a token directly from it, there
-is just nothing in FDP's own code checking it yet.
+correctly and issue real tokens. `customer-service` (Sprint 2) is the first FDP service to
+actually validate them: `spring-boot-starter-oauth2-resource-server` against a direct
+`jwk-set-uri` (not `issuer-uri` — see that service's `SecurityConfig` for why), with a shared
+`common.security.jwt.KeycloakRoleConverter` mapping `resource_access.fdp-api.roles` into Spring
+Security authorities. Confirmed end to end: a real token for `customer@fdp.test` successfully
+registers a profile and is correctly rejected with `403` on the `user:read`-gated admin routes,
+while `admin@fdp.test`'s token succeeds on those same routes. `api-gateway` and the remaining
+domain services are still bare skeletons with no Resource Server dependency yet — "enforcement
+via native Spring Security" (§8) is now started, not finished.
 
 ### How to start it
 From the repo root:
@@ -110,8 +114,10 @@ this repo beyond the realm-import configuration.
 - The FDP-specific configuration is entirely data, not code: `docker/keycloak/fdp-realm.json`
   (realm/client/roles/users) and `docker/postgres/init-databases.sql` (creates the `keycloak_db`
   schema Keycloak owns).
-- Once a service validates tokens, it adds `spring-boot-starter-oauth2-resource-server` to its own
-  `pom.xml` (RULES.md §8) — not a dependency of any service today.
+- `customer-service/pom.xml` declares `spring-boot-starter-oauth2-resource-server` — every other
+  service adds the same dependency once it validates tokens (RULES.md §8).
+- A checked-in Postman collection (`postman/FDP-customer-service.postman_collection.json` + its
+  environment) automates getting a token and using it — see `docs/services/customer-service.md`.
 - No local tool install is required; everything runs in the container. A REST client (`curl`,
   Postman, HTTPie) is enough to exercise the token endpoint manually.
 
@@ -119,10 +125,10 @@ this repo beyond the realm-import configuration.
 Run the `docker compose up -d postgres keycloak` command above, wait for `docker compose ps` to
 show `healthy`, then run the `curl`/token-endpoint request from `credentials.md` with any of the
 four seeded accounts. Decode the returned `access_token` at jwt.io (or `echo <token> | cut -d. -f2
-| base64 -d`) and look for `resource_access.fdp-api.roles` — that array is exactly what a future
-`@PreAuthorize("hasAuthority('order:create')")` check in FDP code will read. This is the whole
-identity story for FDP right now: Keycloak issues real tokens today; FDP code checking them is the
-next piece, starting with whichever service in Sprint 2 builds its first protected endpoint. See
+| base64 -d`) and look for `resource_access.fdp-api.roles` — that's exactly the claim
+`@PreAuthorize("hasAuthority('order:create')")`-style checks read in FDP code today. This is no
+longer just a preview: run `customer-service` (`docs/services/customer-service.md`) and send that
+same token to `GET /api/customers/me` to see the whole identity story working end to end. See
 `./jwt.md` for how token validation will actually be wired into a service, and
 `docs/decisions/0001-retire-identity-service-for-keycloak.md` for why there's no FDP-owned login
 endpoint at all.

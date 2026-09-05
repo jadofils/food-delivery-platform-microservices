@@ -21,19 +21,38 @@ instance with other Postgres-backed services in `docker-compose` for local resou
 but its datasource credentials, connection pool, and Flyway migration history remain fully
 isolated (RULES.md §5).
 
-## API surface (planned)
-- Customer registration and profile management.
-- Delivery address management (create, update, associate with a customer).
-- Exposes its own REST API and OpenAPI spec (→ `docs/api-contracts/`), per SPRINTS.md Sprint 2.
-- Ties to ReadMe.md Epic 1 (Service Decomposition and Database Separation) — customer profiles and
-  addresses are the data this service owns after decomposition from the monolith's Customer
-  Management domain.
+## API surface
+
+**Done and verified live** — built, tested (Testcontainers Postgres + a full Spring Security
+context, see `src/test/java/.../controller/*IT.java`), and exercised end to end against a real
+Keycloak token and a real `customer_db`. OpenAPI/Swagger UI is live at `/swagger-ui/index.html`
+(no auth required to view the docs themselves) once the service is running.
+
+| Endpoint | Auth | Notes |
+|---|---|---|
+| `POST /api/customers/me` | Any authenticated user | Completes registration for the caller's own Keycloak identity — `email`/`firstName`/`lastName` come from the token, only `phoneNumber` is client-supplied. 409 if already registered. |
+| `GET /api/customers/me` | Any authenticated user | 404 until the caller has registered. |
+| `PUT /api/customers/me` | Any authenticated user | Updates `phoneNumber` only — identity fields stay Keycloak's. |
+| `GET /api/customers/me/addresses` | Any authenticated user | Self-service, ownership resolved from the token. |
+| `POST /api/customers/me/addresses` | Any authenticated user | |
+| `GET`/`PUT`/`DELETE /api/customers/me/addresses/{id}` | Any authenticated user | 404 (not 403) if the address belongs to someone else — the ownership check is baked into the repository query, not an application-level `if`. |
+| `GET /api/customers/{id}` | `user:read` | Admin-only lookup by id — the seeded `CUSTOMER` demo account does **not** have this permission (see `docker/keycloak/fdp-realm.json`), only `ADMIN` does. |
+| `GET /api/customers` | `user:read` | Paginated admin listing. |
+
+`email`/`phoneNumber` are `@Masked` in every response (RULES.md §8) — including on a customer's
+own `/me` lookup, per the rule as written. `id` is never masked (it's a structural identifier used
+in URLs). A Postman collection covering every row above, including the negative/permission cases,
+is checked in at `postman/FDP-customer-service.postman_collection.json` (+ matching environment).
 
 ## Depends on / depended on by
-- **Depends on:** `discovery-server` (Eureka registration), `config-server` (externalized config),
-  its own `customer_db` Postgres instance. It re-validates JWTs locally against Keycloak's
-  cached JWKS as defense-in-depth (RULES.md §8) rather than calling Keycloak
-  per-request.
+- **Depends on:** `discovery-server` (Eureka client registration — registers on startup, verified
+  live), its own `customer_db` Postgres instance, and Keycloak's JWKS endpoint to validate tokens
+  (`spring-boot-starter-oauth2-resource-server`, `common.security.jwt.KeycloakRoleConverter` for
+  mapping `resource_access.fdp-api.roles` into Spring Security authorities — RULES.md §3, §8).
+  **Not yet wired:** pulling shared config from `config-server` — this service still configures
+  its datasource/security/Eureka settings directly in its own `application.properties` rather than
+  via `spring-cloud-starter-config`. That's a deliberate scope cut for this pass, not an oversight;
+  revisit once a second Postgres-backed service exists and the duplication actually hurts.
 - **Depended on by:** `order-service` calls `customer-service` synchronously via OpenFeign to
   validate customer existence and delivery address before accepting an order placement, resolved
   via Eureka (`lb://customer-service`) and wrapped in a Resilience4j circuit breaker with a typed

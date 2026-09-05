@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
@@ -74,6 +75,22 @@ class AbstractGlobalExceptionHandlerTest {
 		assertThat(response.getStatusCode().value()).isEqualTo(400);
 		assertThat(response.getBody().errors()).hasSize(1);
 		assertThat(response.getBody().errors().get(0).field()).isEqualTo("email");
+	}
+
+	@Test
+	void handleTypeMismatch_reportsA400NotA500() {
+		MethodParameter parameter = mock(MethodParameter.class);
+		var ex = new MethodArgumentTypeMismatchException("not-a-number", Long.class, "id", parameter, null);
+
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		when(request.getRequestURI()).thenReturn("/api/customers/not-a-number");
+
+		var response = handler.handleTypeMismatch(ex, request);
+
+		assertThat(response.getStatusCode().value()).isEqualTo(400);
+		assertThat(response.getBody().error()).isEqualTo("VALIDATION_FAILED");
+		assertThat(response.getBody().errors()).hasSize(1);
+		assertThat(response.getBody().errors().get(0).field()).isEqualTo("id");
 	}
 
 	@Test
