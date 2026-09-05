@@ -1,7 +1,11 @@
-# Sprint 0 scope only (RULES.md §10, SPRINTS.md Sprint 0): the four backing infra containers —
-# Postgres, MongoDB, RabbitMQ, Redis. No FDP service is defined here yet; each service joins this
-# file in the sprint that actually needs it, and the full compose file (all nine services +
-# Zipkin/ELK/Prometheus/Grafana) is finalized in Sprint 7.
+# Sprint 0 (RULES.md §10, SPRINTS.md Sprint 0) added the four backing infra containers —
+# Postgres, MongoDB, RabbitMQ, Redis; Sprint 1 added Keycloak, the identity provider. No FDP
+# service is defined here yet; each joins this file in the sprint that actually needs it (see
+# RUNNING.md for how each currently runs instead — Maven, not Docker), and the full compose file
+# (all eight services + Zipkin/ELK/Prometheus/Grafana) is finalized in Sprint 7.
+#
+# Every container below follows one naming convention: container_name "fdp-<name>", a pinned
+# version tag (never "latest") — see RUNNING.md's "Naming & tagging" section.
 #
 # Credentials below are local-development defaults only — override any of them via a repo-root
 # .env file (gitignored; see .env.example for the full list). Never put real credentials in this
