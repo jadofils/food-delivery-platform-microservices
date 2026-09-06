@@ -183,6 +183,25 @@ taskkill //F //PID <pid>
 
 ---
 
+## Swagger / OpenAPI docs
+
+Only services with real business endpoints have Swagger UI — `config-server` and
+`discovery-server` are pure infrastructure with no `springdoc-openapi` dependency, so there's
+nothing to browse there beyond what's listed below instead.
+
+| Service | Swagger UI | Raw OpenAPI JSON | Auth needed to view docs? |
+|---|---|---|---|
+| `customer-service` | http://localhost:8082/swagger-ui/index.html | http://localhost:8082/v3/api-docs | No — the docs page itself is `permitAll()`; you only need a token to click **Try it out** on an endpoint |
+| `restaurant-service` | http://localhost:8083/swagger-ui/index.html | http://localhost:8083/v3/api-docs | No, same as above |
+| `discovery-server` | — (no Swagger) | — | Eureka's own dashboard instead: http://localhost:8761 |
+| `config-server` | — (no Swagger) | — | It's a config-serving REST API, not a documented business API — see `curl` examples in `docs/services/config-server.md` |
+
+To call a real endpoint from Swagger UI once it's open: click **Authorize** (top right, padlock
+icon), paste a raw JWT (no `Bearer ` prefix — Swagger adds that itself), **Authorize**, **Close**.
+Get a token via `credentials.md`'s curl command or either Postman collection's "Get Tokens" folder.
+
+---
+
 ## Common recipes
 
 ### "I want to test `customer-service` and/or `restaurant-service` end to end (e.g. in Postman)"
