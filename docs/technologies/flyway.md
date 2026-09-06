@@ -44,17 +44,22 @@ manages it internally; no FDP Flyway migration ever touches it.
 
 ## Getting started
 
-**Status today:** Live and verified — `customer-service` (Sprint 2) has two real migrations,
-`V1__create_customers_table.sql` and `V2__create_addresses_table.sql`, under its own
-`src/main/resources/db/migration`. Confirmed running against a real Postgres, both via
-Testcontainers-backed tests and a live `customer-service` instance (`flyway_schema_history` in
-`customer_db` shows both applied). `restaurant-service`, `order-service`, and `delivery-service`
-are still bare skeletons (`spring-boot-starter` + `spring-boot-starter-test` only) with no
-`spring-boot-starter-data-jpa`, no `flyway-core`, and no migrations of their own yet. One Boot
-4.1-specific gotcha worth flagging: `flyway-core` alone does **not** get Flyway to run
-automatically anymore — the autoconfiguration moved to a separate `spring-boot-flyway` module,
-which `customer-service/pom.xml` now declares explicitly (discovered the same way
-`config-server`'s `@EnableConfigServer` import surprise was — see `SPRINTS.md` Sprint 1).
+**Status today:** Live and verified in two services. `customer-service` has
+`V1__create_customers_table.sql` / `V2__create_addresses_table.sql`; `restaurant-service` has
+`V1__create_restaurants_table.sql` / `V2__create_menu_items_table.sql` — both under their own
+`src/main/resources/db/migration`, confirmed running against real Postgres instances
+(`flyway_schema_history` in each database shows both migrations applied). `order-service` and
+`delivery-service` are still bare skeletons with no `spring-boot-starter-data-jpa`, no
+`flyway-core`, and no migrations of their own yet. Two Boot 4.1/Flyway-10 gotchas worth flagging — both real, both non-obvious because they fail at
+startup, not at compile time:
+- `flyway-core` alone does **not** get Flyway to run automatically anymore — the autoconfiguration
+  moved to a separate `spring-boot-flyway` module (the same kind of module-split surprise
+  `config-server`'s `@EnableConfigServer` import hit — see `SPRINTS.md` Sprint 1).
+- `flyway-database-postgresql` is now a *separate* module from `flyway-core` — omitting it fails
+  at startup with `FlywayException: Unsupported Database: PostgreSQL`. Easy to forget per-service:
+  `customer-service/pom.xml` had it from the start, but it was missed the first time writing
+  `restaurant-service/pom.xml` and caught immediately by that service's own failing context-load
+  test — exactly the kind of mistake a copy-paste between services can reintroduce.
 
 ### How to start it
 There's nothing separate to start. Flyway activates automatically as part of a service's own

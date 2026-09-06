@@ -10,3 +10,6 @@ CREATE DATABASE keycloak_db;
 
 -- customer-service (Sprint 2) -- Flyway migrations under customer-service/src/main/resources/db/migration.
 CREATE DATABASE customer_db;
+
+-- restaurant-service (Sprint 2) -- Flyway migrations under restaurant-service/src/main/resources/db/migration.
+CREATE DATABASE restaurant_db;

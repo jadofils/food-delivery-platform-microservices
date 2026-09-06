@@ -49,14 +49,15 @@ validate request DTOs.
 
 ## Getting started
 
-**Status today:** Live and verified — `customer-service` (Sprint 2) is the first real consumer.
-`CustomerRegistrationRequest`/`CustomerUpdateRequest`/`AddressRequest` use `@NotBlank`/`@Size`/
-`@Pattern`, wired via `@Valid @RequestBody`; an invalid payload (e.g. a malformed `phoneNumber`)
-returns a `400` with a `VALIDATION_FAILED` envelope and one `errors[]` entry naming the bad field —
-confirmed against a real running instance, and covered by both the Testcontainers-backed
-integration tests and the checked-in Postman collection (`postman/FDP-customer-service.postman_collection.json`).
-Every other service (`restaurant-service`, `order-service`, `delivery-service`,
-`notification-service`) is still a bare skeleton with no DTOs of its own yet.
+**Status today:** Live and verified in two services. `customer-service`'s
+`CustomerRegistrationRequest`/`CustomerUpdateRequest`/`AddressRequest` and
+`restaurant-service`'s `RestaurantRegistrationRequest`/`RestaurantUpdateRequest`/`MenuItemRequest`
+use `@NotBlank`/`@Size`/`@Pattern`/`@DecimalMin`/`@Digits`, wired via `@Valid @RequestBody`; an
+invalid payload (a malformed `phoneNumber`, a negative menu item `price`) returns a `400` with a
+`VALIDATION_FAILED` envelope and one `errors[]` entry naming the bad field — confirmed against
+real running instances, and covered by both services' Testcontainers-backed integration tests and
+checked-in Postman collections. `order-service`/`delivery-service`/`notification-service` are
+still bare skeletons with no DTOs of their own yet.
 
 ### How to see it working
 Run `customer-service` (see `docs/services/customer-service.md`) and `POST /api/customers/me`

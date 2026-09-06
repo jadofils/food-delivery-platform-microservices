@@ -49,14 +49,15 @@ any service that depends on it (SPRINTS.md, Sprint 0).
 
 ## Getting started
 
-**Status today:** Live and in real use — `customer-service` (Sprint 2) owns `customer_db`, with
-Flyway-migrated `customers`/`addresses` tables, `spring-boot-starter-data-jpa`, and
+**Status today:** Live and in real use by two services — `customer-service` owns `customer_db`
+(`customers`/`addresses` tables) and `restaurant-service` owns `restaurant_db`
+(`restaurants`/`menu_items` tables), both Flyway-migrated, both with
 `spring.jpa.open-in-view=false` (RULES.md — "no unnecessary eager loading"). Confirmed against a
-real running Postgres via both Testcontainers-backed tests and manual `psql`/Postman verification.
-`restaurant-service`, `order-service`, and `delivery-service` are still bare skeletons with no
-datasource config or migrations of their own yet. Keycloak also uses this container
-(`keycloak_db`), but as external infrastructure managing its own schema — not one of FDP's own
-service databases (RULES.md §8).
+real running Postgres via Testcontainers-backed tests, manual `psql`, and both services' Postman
+collections. `order-service` and `delivery-service` are still bare skeletons with no datasource
+config or migrations of their own yet. Keycloak also uses this container (`keycloak_db`), but as
+external infrastructure managing its own schema — not one of FDP's own service databases
+(RULES.md §8).
 
 ### How to start it
 From the repo root:

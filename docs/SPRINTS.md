@@ -123,15 +123,33 @@ Keycloak's token endpoint directly (no FDP service required yet).
   `GET /api/customers/not-a-number`) was falling through to a bare 500 instead of a proper 400 —
   `common`'s `AbstractGlobalExceptionHandler` now handles `MethodArgumentTypeMismatchException`
   explicitly, for every service, not just this one.
-- `restaurant-service` (`restaurant_db`): restaurants, menus, menu items. *(Not yet
-  implemented — same sprint, next.)*
-- Both register with Eureka, pull config from `config-server`, expose their own REST API and
-  OpenAPI spec (→ `docs/api-contracts/`).
-- Testcontainers-backed CI pipeline for each.
+- `restaurant-service` (`restaurant_db`): restaurants, menus, menu items. **Done and verified
+  live:** `Restaurant`/`MenuItem` JPA entities (`menuItems` LAZY, `@EntityGraph` for the one query
+  that needs them loaded), Flyway migrations, self-service registration/profile/menu-item endpoints
+  (`/api/restaurants/me/**`, gated by `restaurant:menu:write`, ownership resolved from the token)
+  plus public-browsing endpoints (`/api/restaurants/{id}`, `/api/restaurants`,
+  `/api/restaurants/{id}/menu-items`, gated by the weaker `restaurant:menu:read` permission the
+  seeded `CUSTOMER` demo account also holds — anyone who can browse gets these, not just
+  owners/admin). Reuses the same `common.security.jwt.KeycloakRoleConverter` and
+  `jwk-set-uri`-based `SecurityConfig` pattern as `customer-service`, Swagger UI at
+  `/swagger-ui/index.html`. Registers with Eureka on startup (verified live). Same deliberate scope
+  cuts as `customer-service`: no `config-server` integration yet, and Redis caching for menu
+  lookups (RULES.md §12) not wired either. Exercised end to end against real tokens for all three
+  relevant demo roles (`RESTAURANT_OWNER`, `CUSTOMER`, `DELIVERY_AGENT` — the last used specifically
+  to prove it lacks `restaurant:menu:read` and is correctly rejected) — 13 Testcontainers-backed
+  test classes plus a 21-request Postman collection
+  (`postman/FDP-restaurant-service.postman_collection.json`), both green. One dependency gotcha
+  repeated from `customer-service` and caught immediately by the same fix: `flyway-database-postgresql`
+  is a separate module from `flyway-core` in Flyway 10+ — missing it produces "Unsupported
+  Database: PostgreSQL" at startup, not a compile error, so it's easy to forget per-service.
+- Both register with Eureka; pulling config from `config-server` and exposing an OpenAPI spec
+  under `docs/api-contracts/` (as opposed to the live `/v3/api-docs` both already serve) remain
+  open, not yet done.
+- Testcontainers-backed CI pipeline for each — the tests exist and pass locally; a per-service
+  GitHub Actions workflow (as opposed to Sprint 0's single reactor-wide one) is Sprint 7 work.
 
-**Exit criteria:** both services run independently, each against its own database, with no shared
-tables and no direct database access from any other module. (`customer-service` satisfies this
-today; `restaurant-service` does not exist yet.)
+**Exit criteria met:** both services run independently, each against its own database, with no
+shared tables and no direct database access from any other module.
 
 ---
 

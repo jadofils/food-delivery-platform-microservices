@@ -24,8 +24,8 @@ cover that.
 | `config-server` | Maven (`spring-boot:run`) | `config-server` | 8888 | **Implemented** |
 | `discovery-server` | Maven | `discovery-server` | 8761 | **Implemented** |
 | `customer-service` | Maven | `customer-service` | 8082 | **Implemented** (needs `postgres` + `keycloak`) |
+| `restaurant-service` | Maven | `restaurant-service` | 8083 | **Implemented** (needs `postgres` + `keycloak`) |
 | `api-gateway` | Maven | `api-gateway` | 8080 | Skeleton — boots, no routes yet |
-| `restaurant-service` | Maven | `restaurant-service` | 8083 | Skeleton |
 | `order-service` | Maven | `order-service` | 8084 | Skeleton |
 | `delivery-service` | Maven | `delivery-service` | 8085 | Skeleton |
 | `notification-service` | Maven | `notification-service` | 8086 | Skeleton |
@@ -147,12 +147,14 @@ hand, background them instead:
 Start-Process powershell -ArgumentList '-NoExit','-Command','.\mvnw.cmd -pl discovery-server -am spring-boot:run'
 Start-Process powershell -ArgumentList '-NoExit','-Command','.\mvnw.cmd -pl config-server -am spring-boot:run'
 Start-Process powershell -ArgumentList '-NoExit','-Command','.\mvnw.cmd -pl customer-service -am spring-boot:run'
+Start-Process powershell -ArgumentList '-NoExit','-Command','.\mvnw.cmd -pl restaurant-service -am spring-boot:run'
 ```
 ```bash
 # bash -- backgrounds each, logs redirected to /tmp so the terminal stays free
-(./mvnw -pl discovery-server -am spring-boot:run > /tmp/discovery-server.log 2>&1 &)
-(./mvnw -pl config-server    -am spring-boot:run > /tmp/config-server.log    2>&1 &)
-(./mvnw -pl customer-service -am spring-boot:run > /tmp/customer-service.log 2>&1 &)
+(./mvnw -pl discovery-server  -am spring-boot:run > /tmp/discovery-server.log  2>&1 &)
+(./mvnw -pl config-server     -am spring-boot:run > /tmp/config-server.log     2>&1 &)
+(./mvnw -pl customer-service  -am spring-boot:run > /tmp/customer-service.log  2>&1 &)
+(./mvnw -pl restaurant-service -am spring-boot:run > /tmp/restaurant-service.log 2>&1 &)
 # tail -f /tmp/customer-service.log   # to watch one of them
 ```
 
@@ -183,25 +185,29 @@ taskkill //F //PID <pid>
 
 ## Common recipes
 
-### "I want to test `customer-service` end to end (e.g. in Postman)"
+### "I want to test `customer-service` and/or `restaurant-service` end to end (e.g. in Postman)"
 ```bash
 docker compose up -d postgres keycloak
 # wait for both to show "healthy": docker compose ps
-./mvnw -pl customer-service -am spring-boot:run
+./mvnw -pl customer-service -am spring-boot:run       # in one terminal
+./mvnw -pl restaurant-service -am spring-boot:run     # in another
 ```
-Then see `postman/FDP-customer-service.postman_collection.json` +
-`postman/FDP.postman_environment.json` (import both, select the environment, run folder 1 first).
+Then, per service: `postman/FDP-customer-service.postman_collection.json` and/or
+`postman/FDP-restaurant-service.postman_collection.json`, both sharing
+`postman/FDP.postman_environment.json` (import all three, select the environment, run each
+collection's folder 1 first).
 
 ### "I want everything currently implemented running together"
 ```bash
-docker compose up -d                                                    # all 5 infra containers
-./mvnw clean package -DskipTests                                        # build every module once
-(java -jar discovery-server/target/discovery-server-0.0.1-SNAPSHOT.jar  > /tmp/discovery-server.log 2>&1 &)
-(java -jar config-server/target/config-server-0.0.1-SNAPSHOT.jar       > /tmp/config-server.log    2>&1 &)
-(java -jar customer-service/target/customer-service-0.0.1-SNAPSHOT.jar > /tmp/customer-service.log 2>&1 &)
+docker compose up -d                                                     # all 5 infra containers
+./mvnw clean package -DskipTests                                         # build every module once
+(java -jar discovery-server/target/discovery-server-0.0.1-SNAPSHOT.jar   > /tmp/discovery-server.log   2>&1 &)
+(java -jar config-server/target/config-server-0.0.1-SNAPSHOT.jar        > /tmp/config-server.log       2>&1 &)
+(java -jar customer-service/target/customer-service-0.0.1-SNAPSHOT.jar  > /tmp/customer-service.log    2>&1 &)
+(java -jar restaurant-service/target/restaurant-service-0.0.1-SNAPSHOT.jar > /tmp/restaurant-service.log 2>&1 &)
 ```
-(`api-gateway`/`restaurant-service`/`order-service`/`delivery-service`/`notification-service` can
-be started the same way, but they're skeletons today — nothing to exercise on them yet.)
+(`api-gateway`/`order-service`/`delivery-service`/`notification-service` can be started the same
+way, but they're skeletons today — nothing to exercise on them yet.)
 
 ### "I only need the databases/broker up, no application code running"
 ```bash
@@ -213,14 +219,14 @@ That's it — no FDP service needs to be running for this.
 
 ## Troubleshooting
 
-- **`customer-service` fails with `database "customer_db" does not exist`** — this happens if
-  `postgres`'s data volume already existed *before* `docker/postgres/init-databases.sql` was
-  updated to create `customer_db` (init scripts only run against a brand-new volume). Fix:
-  `docker exec fdp-postgres psql -U fdp -d fdp -c "CREATE DATABASE customer_db;"`, or
-  `docker compose down -v && docker compose up -d` for a fully fresh volume.
+- **A service fails with `database "customer_db"` (or `"restaurant_db"`) `does not exist`** — this
+  happens if `postgres`'s data volume already existed *before*
+  `docker/postgres/init-databases.sql` was updated to create that database (init scripts only run
+  against a brand-new volume). Fix: `docker exec fdp-postgres psql -U fdp -d fdp -c "CREATE DATABASE customer_db;"`
+  (swap the name), or `docker compose down -v && docker compose up -d` for a fully fresh volume.
 - **Keycloak container is `starting`, not `healthy`, for a while** — normal on first start; realm
   import can take 20-40 seconds. Wait for `docker compose ps` to show `healthy` before starting
-  `customer-service` against it.
+  `customer-service`/`restaurant-service` against it.
 - **Testcontainers-backed tests hang or fail to connect** — Docker Desktop must be running; that's
   the one hard requirement even for tests that don't otherwise mention Docker.
 - **Port already in use** — another instance of the same service (or something unrelated) is
@@ -234,4 +240,4 @@ That's it — no FDP service needs to be running for this.
 - `docs/RULES.md` §2 (service inventory, ports), §10 (containerization plan, Sprint 7)
 - `docs/SPRINTS.md` (what's actually built vs. still planned)
 - `credentials.md` (seeded Keycloak demo accounts)
-- `postman/` (collection + environment for exercising `customer-service`)
+- `postman/` (collections + shared environment for exercising `customer-service` and `restaurant-service`)
