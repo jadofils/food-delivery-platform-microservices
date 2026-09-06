@@ -46,6 +46,18 @@
 			<scope>provided</scope>
 		</dependency>
 		<!--
+			provided, same reasoning as jakarta.servlet-api above: AbstractGlobalExceptionHandler's
+			NoResourceFoundException handler needs this MVC-specific type
+			(org.springframework.web.servlet.resource — NOT in plain spring-web, which is
+			servlet-agnostic), but the actual dependency belongs to each consuming service via
+			spring-boot-starter-web, not to common's own runtime classpath.
+		-->
+		<dependency>
+			<groupId>org.springframework</groupId>
+			<artifactId>spring-webmvc</artifactId>
+			<scope>provided</scope>
+		</dependency>
+		<!--
 			provided: KeycloakRoleConverter/JwtClaims/RestAuthenticationEntryPoint/RestAccessDeniedHandler
 			(common.security.jwt) compile against Jwt/Converter/AuthenticationEntryPoint/
 			AccessDeniedHandler types, but the actual OAuth2 Resource Server runtime wiring

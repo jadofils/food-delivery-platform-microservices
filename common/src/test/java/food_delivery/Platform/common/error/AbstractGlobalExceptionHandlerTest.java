@@ -9,9 +9,11 @@ import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
+import org.springframework.http.HttpMethod;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
@@ -91,6 +93,21 @@ class AbstractGlobalExceptionHandlerTest {
 		assertThat(response.getBody().error()).isEqualTo("VALIDATION_FAILED");
 		assertThat(response.getBody().errors()).hasSize(1);
 		assertThat(response.getBody().errors().get(0).field()).isEqualTo("id");
+	}
+
+	@Test
+	void handleNoResourceFound_reportsA404NotA500() {
+		// Reproduces the real bug: a copy-pasted Swagger URL with trailing junk
+		// ("/swagger-ui/index.html%20%E2%94%82") was falling through to the 500 catch-all.
+		var ex = new NoResourceFoundException(HttpMethod.GET, "swagger-ui/index.html%20│", "no such resource");
+
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		when(request.getRequestURI()).thenReturn("/swagger-ui/index.html%20%E2%94%82");
+
+		var response = handler.handleNoResourceFound(ex, request);
+
+		assertThat(response.getStatusCode().value()).isEqualTo(404);
+		assertThat(response.getBody().error()).isEqualTo("RESOURCE_NOT_FOUND");
 	}
 
 	@Test

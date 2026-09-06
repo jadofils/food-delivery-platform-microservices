@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import food_delivery.Platform.common.error.ApiErrorResponse.FieldError;
 import jakarta.servlet.http.HttpServletRequest;
@@ -118,6 +119,27 @@ public abstract class AbstractGlobalExceptionHandler {
 		ApiErrorResponse body = ApiErrorResponse.ofValidation("Validation failed.", request.getRequestURI(), traceId,
 				List.of(fieldError));
 		return ResponseEntity.status(body.status()).body(body);
+	}
+
+	/**
+	 * No handler mapping and no static resource matched this exact path — e.g. a typo'd URL, or a
+	 * copy-pasted link that picked up trailing junk (a stray space, a markdown table's border
+	 * character). Spring's own resource resolution already knows this is a plain 404
+	 * ({@link NoResourceFoundException} carries a 404 status itself); without this handler it falls
+	 * through to the catch-all below and gets reported as a {@code 500}, which is wrong the same
+	 * way an unmapped {@link MethodArgumentTypeMismatchException} would be — the caller asked for
+	 * something that doesn't exist, this service isn't broken. Logged at {@code DEBUG}, same as any
+	 * other ordinary 404 (RULES.md §14).
+	 */
+	@ExceptionHandler(NoResourceFoundException.class)
+	public ResponseEntity<ApiErrorResponse> handleNoResourceFound(NoResourceFoundException ex,
+			HttpServletRequest request) {
+		String traceId = traceId();
+		log.debug("No resource found for {} [traceId={}]", request.getRequestURI(), traceId);
+		ResourceNotFoundException reason = new ResourceNotFoundException(
+				"No resource found for " + request.getRequestURI());
+		ApiErrorResponse body = ApiErrorResponse.of(reason, reason.getMessage(), request.getRequestURI(), traceId);
+		return ResponseEntity.status(reason.status()).body(body);
 	}
 
 	/**
