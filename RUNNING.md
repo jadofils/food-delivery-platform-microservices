@@ -202,6 +202,28 @@ Get a token via `credentials.md`'s curl command or either Postman collection's "
 
 ---
 
+## Keycloak endpoints
+
+All stock Keycloak — no FDP code owns any of these (`identity-service` was retired for exactly
+this reason, see `docs/decisions/`). Every row below verified live against the running stack.
+
+| What | Endpoint |
+|---|---|
+| Login (password grant) | `POST http://localhost:8180/realms/fdp/protocol/openid-connect/token` — body `grant_type=password&client_id=fdp-api&username=<user>&password=<pass>&scope=openid` |
+| Refresh | same URL — body `grant_type=refresh_token&client_id=fdp-api&refresh_token=<refresh_token>` |
+| Logout | `POST http://localhost:8180/realms/fdp/protocol/openid-connect/logout` — body `client_id=fdp-api&refresh_token=<refresh_token>` |
+| Who am I (`/userinfo`) | `GET http://localhost:8180/realms/fdp/protocol/openid-connect/userinfo` — header `Authorization: Bearer <access_token>`; the token must have been requested with `scope=openid` or this 403s |
+| **Register** (browser) | `http://localhost:8180/realms/fdp/protocol/openid-connect/auth?client_id=fdp-api&response_type=code&scope=openid&redirect_uri=http://localhost:8180` → click **Register** |
+| JWKS (public keys) | `GET http://localhost:8180/realms/fdp/protocol/openid-connect/certs` |
+| OIDC discovery document | `GET http://localhost:8180/realms/fdp/.well-known/openid-configuration` |
+| Admin console (Keycloak's own UI) | http://localhost:8180 — login `KEYCLOAK_ADMIN_USER`/`KEYCLOAK_ADMIN_PASSWORD` from `.env.example` (defaults `kcadmin`/`kcadmin`), then pick the **fdp** realm from the dropdown |
+| Create a user (admin REST API) | `POST http://localhost:8180/admin/realms/fdp/users` with an **admin token from the master realm** — see `credentials.md` "Register a new customer" for the full recipe |
+
+Seeded demo accounts (username/password) and the permission gap on self-registered accounts are
+in `credentials.md` — not repeated here to avoid the two files drifting apart.
+
+---
+
 ## Common recipes
 
 ### "I want to test `customer-service` and/or `restaurant-service` end to end (e.g. in Postman)"
