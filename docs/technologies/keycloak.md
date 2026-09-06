@@ -112,10 +112,12 @@ cleanly against a not-yet-ready database. First start imports the `fdp` realm au
 
 These are all stock Keycloak endpoints, not FDP code — nothing here is custom-built or specific to
 this repo beyond the realm-import configuration. **Self-service registration
-(`registrationAllowed`) is currently `false`** on the `fdp` realm — no "Register" link exists on
-Keycloak's own login page today; new accounts are created via the admin console or admin REST API
-only (see `credentials.md`). Turning it on is a one-line realm-config change, deliberately not
-flipped without being asked first, since it's a real identity-provider security setting.
+(`registrationAllowed`) is now `true`** on the `fdp` realm — a real "Register" link works on
+Keycloak's own login page, verified live. **Known gap:** a self-registered account gets no
+`fdp-api` permissions by default (`default-roles-fdp` only carries stock account-management
+roles) — see `credentials.md`'s "Register a new customer" section for the fix (add the seeded
+`CUSTOMER` account's permission set as composites of `default-roles-fdp`) and why it hasn't been
+applied yet.
 
 ### Installation & dependencies
 - Docker image: `quay.io/keycloak/keycloak:26.0` (pinned in `docker-compose.yml`).

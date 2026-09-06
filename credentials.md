@@ -62,32 +62,47 @@ Returns `204`; the refresh token (and the access token's session) is invalidated
 verified: reusing it afterward correctly fails with `"Session not active"`.
 
 ### Register a new customer
-**Not available today.** The `fdp` realm's self-service registration is currently disabled
-(`registrationAllowed: false`) — only the four seeded accounts above exist. Until that's turned
-on (a realm-config change, not something to flip casually since it's identity-provider security
-config), a new account can only be created two ways:
-- **Keycloak's admin console** — `http://localhost:8180`, log in with
-  `KEYCLOAK_ADMIN_USER`/`KEYCLOAK_ADMIN_PASSWORD` from `.env.example` (defaults: `kcadmin` /
-  `kcadmin`, local-dev-only), switch to the `fdp` realm, **Users → Add user**.
-- **Keycloak's admin REST API**, scriptable (useful for seeding several test accounts without a
-  browser) — obtain an admin token against the **master** realm first, then create the user
-  against the `fdp` realm:
-  ```
-  POST http://localhost:8180/realms/master/protocol/openid-connect/token
-  Content-Type: application/x-www-form-urlencoded
-  grant_type=password&client_id=admin-cli&username=kcadmin&password=kcadmin
 
-  POST http://localhost:8180/admin/realms/fdp/users
-  Authorization: Bearer <master admin access_token>
-  Content-Type: application/json
+**Self-service registration is enabled** (`registrationAllowed: true`) — Keycloak's own login page
+now has a real "Register" link:
+```
+http://localhost:8180/realms/fdp/protocol/openid-connect/auth?client_id=fdp-api&response_type=code&scope=openid&redirect_uri=http://localhost:8180
+```
+Open that in a browser, click **Register**, fill in the form — a brand-new account is created
+directly in Keycloak, no FDP code involved (verified: the resulting registration page is a real,
+working Keycloak form, confirmed live).
 
-  {"username":"new-customer@fdp.test","email":"new-customer@fdp.test","firstName":"New",
-   "lastName":"Customer","enabled":true,"emailVerified":true,
-   "credentials":[{"type":"password","value":"SomePassword@123","temporary":false}]}
-  ```
-  Then grant it the right client roles under **Users → (the new user) → Role mapping** (or the
-  equivalent admin REST call) — a plain customer needs `order:create`, `order:cancel`,
-  `order:read`, `restaurant:menu:read` to match the seeded `CUSTOMER` account's own role set.
-- **Turning on self-service registration** (`registrationAllowed: true` on the realm) is the
-  option that gives a real "Register" link on Keycloak's own login page — ask before enabling
-  this; it's a genuine identity-provider security setting, not a cosmetic toggle.
+**Known gap, not yet fixed:** a self-registered account gets **no FDP permissions by default** —
+Keycloak's `default-roles-fdp` realm role (auto-assigned to every new user, self-registered or
+admin-created) currently only carries stock account-management roles, none of `fdp-api`'s
+permission strings. A brand-new customer can still call `POST /api/customers/me` (self-service
+routes only require *authentication*, not a specific permission), but will get `403` on anything
+requiring `order:create`/`restaurant:menu:read`/etc. — i.e. can't actually place an order or
+browse a menu yet. To fix this, add the seeded `CUSTOMER` account's own permission set
+(`order:create`, `order:cancel`, `order:read`, `restaurant:menu:read`) as composites of
+`default-roles-fdp`:
+- **Console:** `http://localhost:8180` (admin login: `KEYCLOAK_ADMIN_USER`/`KEYCLOAK_ADMIN_PASSWORD`,
+  defaults `kcadmin`/`kcadmin`) → `fdp` realm → **Realm roles → default-roles-fdp → Associated
+  roles → Assign role → Filter by clients → fdp-api** → check `order:create`, `order:cancel`,
+  `order:read`, `restaurant:menu:read` → **Assign**.
+- **Admin REST API** (scriptable): `POST /admin/realms/fdp/roles/default-roles-fdp/composites`
+  with a JSON array of the four role objects (fetch their `id`s from
+  `GET /admin/realms/fdp/clients/{fdp-api-client-uuid}/roles` first).
+
+For creating an account without the browser flow (e.g. seeding several test users), the admin
+console/REST path from before still works — obtain an admin token against the **master** realm,
+then create the user against `fdp`:
+```
+POST http://localhost:8180/realms/master/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+grant_type=password&client_id=admin-cli&username=kcadmin&password=kcadmin
+
+POST http://localhost:8180/admin/realms/fdp/users
+Authorization: Bearer <master admin access_token>
+Content-Type: application/json
+
+{"username":"new-customer@fdp.test","email":"new-customer@fdp.test","firstName":"New",
+ "lastName":"Customer","enabled":true,"emailVerified":true,
+ "credentials":[{"type":"password","value":"SomePassword@123","temporary":false}]}
+```
+(Verified end to end: created, logged in successfully, then deleted.)
