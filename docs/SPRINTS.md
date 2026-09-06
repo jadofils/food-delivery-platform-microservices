@@ -157,16 +157,40 @@ shared tables and no direct database access from any other module.
 
 **Goal:** the first cross-service read dependency, done the right way.
 
-- `order-service` (`order_db`): order placement and lifecycle.
+- `order-service` (`order_db`): order placement and lifecycle. **Done and verified live:**
+  `Order`/`OrderItem` JPA entities (item name/price snapshotted at placement time, never re-read
+  live — order history must stay stable even if the restaurant later changes its menu), Flyway
+  migrations, self-service endpoints (`/api/orders/me/**`) matching Keycloak's own permission set
+  exactly (`order:create`, `order:read`, `order:cancel`). See `docs/services/order-service.md`.
 - OpenFeign clients to `customer-service` (validate customer/address) and `restaurant-service`
-  (validate menu items and pricing), resolved via Eureka (`lb://...`).
-- Resilience4j circuit breaker + retry + timeout + bulkhead on both Feign clients, with typed
-  fallback responses.
-- Contract tests for both Feign clients; Testcontainers CI pipeline.
+  (validate menu items and pricing), resolved via Eureka (`lb://...`) — **done and verified live**
+  against real running instances, including a real permission-relayed token on every call
+  (`TokenRelayRequestInterceptor`), never a separate service credential.
+- Resilience4j circuit breaker + retry + bulkhead on both Feign clients, with typed fallback
+  responses — done. "Timeout" is enforced via Feign's own connect/read timeout rather than
+  Resilience4j's `@TimeLimiter`, a deliberate choice (see `docs/services/order-service.md` for
+  why), so the quartet in RULES.md §7 is satisfied by three Resilience4j annotations plus one
+  HTTP-client-level timeout, not four Resilience4j annotations.
+- Also pulled forward from Sprint 5, since it's the natural pairing with this same service's sync
+  calls: `order-service` publishes real `OrderPlacedEvent`/`OrderCancelledEvent` to a durable
+  RabbitMQ topic exchange (`fdp.order-events`) — verified live via RabbitMQ's management API, not
+  just unit-tested.
+- Testcontainers CI pipeline: done (Postgres + RabbitMQ, 11 tests). **Not done:** genuine
+  consumer-driven contract tests for the two Feign clients (RULES.md §9's stated aspiration) — the
+  automated suite mocks both gateways at the method level instead, since standing up real
+  Spring Cloud Contract infrastructure was out of scope for this pass. The *real* integration is
+  proven a different way: live-verified against actually-running `customer-`/`restaurant-service`
+  instances, including the failure path (see exit criteria below) — strong evidence, but not the
+  same thing as an automated contract test that runs in CI.
 
 **Exit criteria:** an order can be placed end-to-end through real service-to-service calls, and
 placing an order still degrades gracefully (clear error, not a hang) if `restaurant-service` is
-stopped.
+stopped. **Met and verified live**, twice: (1) a real order placed successfully through real
+Eureka-resolved Feign calls to real `customer-service`/`restaurant-service` instances, with the
+correct restaurant-supplied price snapshotted; (2) `restaurant-service` stopped mid-run, next order
+placement returned a clean `503 SERVICE_UNAVAILABLE` in ~7 seconds (not a hang), and order
+placement recovered automatically once `restaurant-service` came back — circuit breaker state
+confirmed via `/actuator/circuitbreakers` throughout.
 
 ---
 
@@ -193,7 +217,10 @@ demonstrable on the order-placement route.
 notification/audit trail.
 
 - RabbitMQ topic exchange(s) with DLQs per consumer queue.
-- `order-service` publishes `OrderPlacedEvent` / `OrderCancelledEvent`.
+- `order-service` publishes `OrderPlacedEvent` / `OrderCancelledEvent` — **done early, in Sprint 3**
+  (see that sprint's notes), since it paired naturally with `order-service`'s own build. What
+  remains here is the *consuming* side: real consumer queues with DLQs replacing the temporary
+  `order-events.inspection` queue Sprint 3 left in place purely for local visibility.
 - `delivery-service` (`delivery_db`) consumes `OrderPlacedEvent`, auto-creates delivery
   assignments, publishes `DeliveryStatusUpdatedEvent`. Consumer is idempotent.
 - `notification-service` (`notification_db`, MongoDB) consumes domain events and persists the

@@ -53,45 +53,58 @@ annotations/AOP.
 
 ## Getting started
 
-**Status today:** Nothing uses Resilience4j yet. No service has any Feign client to wrap — even
-`order-service`, the first service that will need one (Sprint 3), is still a bare
-`spring-boot-starter` + `spring-boot-starter-test` skeleton with no `resilience4j-spring-boot3`, no
-`spring-cloud-starter-openfeign`, no circuit breaker config, and no fallback methods anywhere in
-the repo.
+**Status today:** Live and verified — `order-service` (Sprint 3) wraps both its Feign clients
+(`CustomerServiceGateway`, `RestaurantServiceGateway`) with named `@CircuitBreaker`/`@Retry`/
+`@Bulkhead` instances and typed `ServiceUnavailableException` fallbacks. Verified against a real
+failure, not just a unit test: with `restaurant-service` actually stopped, placing an order
+returned a clean `503` in ~7 seconds (not a hang), and order placement recovered automatically once
+`restaurant-service` came back — confirmed via `/actuator/circuitbreakers` showing the instance's
+recorded failures and its return to `CLOSED`. "Timeout" is enforced via Feign's own
+connect/read-timeout config, not Resilience4j's `@TimeLimiter` — see
+`docs/services/order-service.md` for why (in short: `@TimeLimiter` requires the guarded method to
+return `CompletableFuture`, which would turn a genuinely synchronous call chain async purely to
+satisfy the annotation).
 
 ### How to start it
-Nothing to start — Resilience4j is an in-process library wired into whichever service has an
-outbound Feign call, not a standalone process. There is no service today with a call to wrap.
+`order-service` is the one to run: `./mvnw -pl order-service -am spring-boot:run` (see
+`docs/services/order-service.md` for its full prerequisites — `customer-service` and
+`restaurant-service` need to be running too, since that's what it calls).
 
 ### How to access it
-Not applicable today. Once `order-service` adds its first Feign client (Sprint 3), circuit breaker
-state becomes observable via that service's own `/actuator/circuitbreakers` endpoint (RULES.md
-§7) — but that requires both `spring-boot-starter-actuator` and `resilience4j-spring-boot3`, and
-neither is a dependency of any service yet.
+Circuit breaker state is observable via `order-service`'s own Actuator endpoint, same as RULES.md
+§7 requires — but like every other endpoint, it needs a valid Bearer token (RULES.md §8's "secure
+all endpoints" applies to Actuator too, not just business routes):
+```
+curl http://localhost:8084/actuator/circuitbreakers -H "Authorization: Bearer <access_token>"
+```
 
 ### Endpoints it exposes
-None of its own. Resilience4j augments a service's existing Actuator surface
-(`/actuator/circuitbreakers`, plus the broader `/actuator/health`, `/actuator/metrics`,
-`/actuator/prometheus` per RULES.md §13) once added — it does not expose a standalone endpoint of
-its own, and no service exposes any of this today.
+| Endpoint | Purpose | Status |
+|---|---|---|
+| `GET /actuator/circuitbreakers` | Per-instance state (`CLOSED`/`OPEN`/`HALF_OPEN`), failure counts | Live, verified |
+
+Resilience4j itself exposes nothing standalone — this is `order-service`'s own Actuator surface,
+augmented by the library.
 
 ### Installation & dependencies
-- Not present in any service's `pom.xml` today. `order-service` will be the first consumer
-  (Sprint 3), adding `io.github.resilience4j:resilience4j-spring-boot3` (or whatever the actual
-  Boot-4.1.1-compatible coordinate turns out to be — this hasn't been verified against a resolved
-  jar yet, the same kind of check `./spring-cloud-config.md`'s `@EnableConfigServer` import needed
-  before it could be trusted) alongside `spring-cloud-starter-openfeign` and
-  `spring-boot-starter-aop`.
-- Versions are managed by the root aggregator's dependency management, never pinned per-service
-  (RULES.md §4) — confirming Boot 4.1.1 compatibility before pinning anything is Sprint 3 work,
-  not done yet.
+- `order-service/pom.xml`: `io.github.resilience4j:resilience4j-spring-boot3` (version 2.3.0,
+  pinned via a `resilience4j-bom` import in the root aggregator's `dependencyManagement`, RULES.md
+  §4), `spring-cloud-starter-openfeign`, `spring-boot-starter-actuator`.
+- Per-instance config (`sliding-window-size`, `failure-rate-threshold`,
+  `wait-duration-in-open-state`, retry `max-attempts`/`wait-duration`, bulkhead
+  `max-concurrent-calls`) lives in `application.properties`, one block per named instance
+  (`customer-service`, `restaurant-service`) — no library defaults relied on (RULES.md §7).
+  `ignore-exceptions` is set to `ResourceNotFoundException` on both the circuit breaker and retry
+  instances: a downstream `404` (no such address/restaurant/menu item) is a legitimate business
+  outcome, not evidence the dependency is unhealthy, and must never trip the breaker.
 
 ### For newcomers
-There's no running code to look at yet. Read RULES.md §7 for the exact rule this library will
-enforce the moment it's introduced: circuit breaker, retry, timeout, and bulkhead all configured
-explicitly per Feign client, with a typed fallback — never relying on Resilience4j's defaults. That
-rule applies starting with `order-service`'s first Feign client to `customer-service` and
-`restaurant-service` in Sprint 3; nothing before then exercises it.
+Read `order-service`'s `CustomerServiceGateway`/`RestaurantServiceGateway` classes
+(`order-service/src/main/java/.../client/`) alongside their `application.properties` config block
+— that pairing is the whole pattern RULES.md §7 asks for, applied for real. To see it fail
+gracefully yourself: start the full stack (`docs/services/order-service.md`), place one order
+successfully, stop `restaurant-service`, place another — watch the clean `503` instead of a hang,
+then restart `restaurant-service` and watch the very next attempt succeed on its own.
 
 ## Related
 - `RULES.md §6` (Feign clients wrapped), `RULES.md §7` (resilience configuration), `RULES.md §14`

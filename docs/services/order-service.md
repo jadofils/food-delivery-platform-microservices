@@ -20,31 +20,67 @@ PostgreSQL, `order_db` (RULES.md §2). Schema is owned exclusively by `order-ser
 with Flyway under `src/main/resources/db/migration`, additive and forward-only on `main`
 (RULES.md §5).
 
-## API surface (planned)
-Exposes REST endpoints for placing and querying orders, satisfying the "place order" step of the
-end-to-end flow (ReadMe.md Epic 5, user story 5.1) and the order routing epic (ReadMe.md Epic 3,
-`/api/orders/**`). Before accepting an order it validates the customer and delivery address via
-`customer-service` and validates menu items and pricing via `restaurant-service` (ReadMe.md Epic
-1, user story 1.2). An OpenAPI spec for this surface is planned under `docs/api-contracts/`
-(RULES.md §9).
+## API surface
+
+**Done and verified live** — the first FDP service to demonstrate both communication styles
+RULES.md §6 defines: synchronous (OpenFeign, circuit-breaker-protected) and asynchronous
+(RabbitMQ). Tested (11 Testcontainers-backed tests: Postgres + RabbitMQ, mocked Feign gateways)
+and exercised end to end against real, live `customer-service`/`restaurant-service` instances —
+including a real, timed circuit-breaker fallback with `restaurant-service` actually stopped mid-run.
+OpenAPI/Swagger UI at `/swagger-ui/index.html`.
+
+| Endpoint | Auth | Notes |
+|---|---|---|
+| `POST /api/orders/me` | `order:create` | Validates the restaurant, delivery address, and every menu item via real OpenFeign calls (never trusts a client-supplied price); snapshots item name/price into the order; publishes `OrderPlacedEvent`. |
+| `GET /api/orders/me` | `order:read` | Paginated summary view (no item breakdown — see why below). |
+| `GET /api/orders/me/{id}` | `order:read` | Full view including item breakdown. 404 if not found or not the caller's own order. |
+| `POST /api/orders/me/{id}/cancel` | `order:cancel` | Only from `PLACED`; `409 Conflict` if already cancelled. Publishes `OrderCancelledEvent`. |
+
+Entirely self-service — matches Keycloak's own permission set exactly (`order:create`,
+`order:read`, `order:cancel`; RULES.md §8), so there is no separate admin-wide order-listing route
+in this build (there's no distinct "view any order" permission to gate it on without inventing
+one — a deliberate scope cut, not an oversight).
+
+**Sync validation (RULES.md §6, §7):** `CustomerServiceGateway`/`RestaurantServiceGateway` wrap
+`OpenFeign` clients resolved via Eureka (`lb://customer-service`, `lb://restaurant-service`), each
+with an explicit Resilience4j circuit breaker + retry + bulkhead (named instances, no library
+defaults) and a typed `ServiceUnavailableException` fallback. "Timeout" is Feign's own
+connect/read timeout, not Resilience4j's `@TimeLimiter` (see `CustomerServiceGateway`'s class
+comment for why). Every call **relays the placing customer's own Bearer token**
+(`TokenRelayRequestInterceptor`) rather than using a separate service credential — order-service
+only ever does what the caller who placed the order was already allowed to do.
+
+**Async publishing (RULES.md §6):** a durable `fdp.order-events` topic exchange, routing keys
+`order.placed`/`order.cancelled`. A temporary `order-events.inspection` queue (bound to `order.*`)
+makes published events visible via RabbitMQ's management UI
+(`http://localhost:15672`) before any real consumer exists — removed once `delivery-service`/
+`notification-service` (Sprint 5) declare their own real queues.
+
+A Postman collection covering every row above, plus the resilience/async demos, is checked in at
+`postman/FDP-order-service.postman_collection.json`.
 
 ## Depends on / depended on by
-- **Depends on:** `discovery-server` (Eureka registration), `config-server` (externalized
-  config), its own `order_db` Postgres instance, and — synchronously via OpenFeign, resolved
-  through Eureka and wrapped in a Resilience4j circuit breaker with a typed fallback —
+- **Depends on:** `discovery-server` (Eureka client registration — verified live), its own
+  `order_db` Postgres instance, RabbitMQ (publish only), and — synchronously via OpenFeign,
+  resolved through Eureka and wrapped in a Resilience4j circuit breaker with a typed fallback —
   `customer-service` (validate customer/address) and `restaurant-service` (validate menu items and
-  pricing) (RULES.md §6, §7). It publishes `OrderPlacedEvent` and `OrderCancelledEvent` to a
-  RabbitMQ topic exchange instead of calling `delivery-service` or `notification-service`
-  synchronously (RULES.md §6).
-- **Depended on by:** `delivery-service` consumes `OrderPlacedEvent` to auto-create delivery
-  assignments; `notification-service` consumes `OrderPlacedEvent`/`OrderCancelledEvent` to persist
-  notification/audit records. `api-gateway` routes `/api/orders/**` to it (ReadMe.md Epic 3).
+  pricing) (RULES.md §6, §7), confirmed live including the failure path (stopped
+  `restaurant-service` mid-flow, got a clean `503` in ~7s, confirmed automatic recovery once it
+  came back). **Not yet wired:** `config-server` integration — same documented scope cut as
+  `customer-`/`restaurant-service`.
+- **Depended on by:** `delivery-service` will consume `OrderPlacedEvent` to auto-create delivery
+  assignments; `notification-service` will consume `OrderPlacedEvent`/`OrderCancelledEvent` to
+  persist notification/audit records (both Sprint 5, not built yet — today their events land only
+  in the temporary inspection queue above). `api-gateway` will route `/api/orders/**` to it
+  (Sprint 4).
 
 ## Delivered in
-Sprint 3 — "Order service & synchronous inter-service calls" (SPRINTS.md) delivers the service
-itself and its synchronous Feign calls to `customer-service` and `restaurant-service`. Sprint 5 —
-"Delivery, events, and notifications" (SPRINTS.md) adds its `OrderPlacedEvent` /
-`OrderCancelledEvent` publishing to RabbitMQ.
+Sprint 3 — "Order service & synchronous inter-service calls" (SPRINTS.md): the service itself and
+its synchronous Feign calls to `customer-service`/`restaurant-service`, done. The *publishing* half
+of Sprint 5's `OrderPlacedEvent`/`OrderCancelledEvent` work was pulled forward into this same
+build, since it's the natural pairing with order-service's own sync calls and directly demonstrates
+RULES.md §6's async communication rules — the *consuming* half (`delivery-service`,
+`notification-service` actually reacting to these events) remains Sprint 5 work, not done.
 
 ## Related
 - RULES.md §2 (Service inventory), §5 (Data ownership), §6 (Communication rules), §7 (Resilience)

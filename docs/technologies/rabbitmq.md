@@ -56,13 +56,13 @@ logic until Sprint 5.
 
 ## Getting started
 
-**Status today:** The container is live (part of the Sprint 1 `docker-compose.yml` additions) —
-but nothing publishes or consumes yet. `order-service`, `delivery-service`, and
-`notification-service` are all still bare skeletons (`spring-boot-starter` +
-`spring-boot-starter-test` only, per each module's own `pom.xml`), with no `spring-boot-starter-amqp`,
-no exchange/queue declarations, and no listeners. No exchanges, queues, or DLQs are provisioned yet
-— that's Sprint 5 work (`order-service` publishing, `delivery-service`/`notification-service`
-consuming). This is planned — Sprint 5, not yet implemented.
+**Status today:** Live and in real use — `order-service` (Sprint 3, pulled forward from Sprint 5's
+publishing half) publishes real `OrderPlacedEvent`/`OrderCancelledEvent` messages to a durable
+`fdp.order-events` topic exchange on every order placement/cancellation, confirmed by reading them
+back via RabbitMQ's management API. `delivery-service`/`notification-service` (Sprint 5) don't
+exist yet, so nothing *consumes* these for real — a temporary `order-events.inspection` queue
+(bound to `order.*`) keeps published events visible in the meantime instead of letting them be
+silently dropped by the topic exchange.
 
 ### How to start it
 From the repo root:
@@ -70,15 +70,16 @@ From the repo root:
 docker compose up -d rabbitmq
 ```
 This alone (no `.env` file needed) starts a single RabbitMQ 4 container (management plugin
-included) with the default credentials below. No exchanges or queues are declared on startup —
-those get created by service code once it exists (Sprint 5).
+included) with the default credentials below. The exchange/queue/binding are declared by
+`order-service` itself on startup (`RabbitConfig`), not by RabbitMQ's own container config — start
+`order-service` too (`./mvnw -pl order-service -am spring-boot:run`) to see them appear.
 
 ### How to access it
-- **AMQP (what services will actually connect to):** `localhost:5672` (override via
-  `RABBITMQ_PORT` in a repo-root `.env` file — see `.env.example`).
+- **AMQP (what services actually connect to):** `localhost:5672` (override via `RABBITMQ_PORT` in
+  a repo-root `.env` file — see `.env.example`).
 - **Management UI:** `http://localhost:15672` (override via `RABBITMQ_MANAGEMENT_PORT`), login
-  `fdp` / `fdp` — the main way to look at this today: you can watch exchanges, queues, and
-  connections there once something creates them, but nothing does yet.
+  `fdp` / `fdp` — once `order-service` has run at least once, **Queues → order-events.inspection →
+  Get messages** shows real published event payloads.
 - **Default credentials (local dev only):** user `fdp`, password `fdp` — same values
   `docker-compose.yml` falls back to if no `.env` is present. Never used for anything but local
   development; production credentials come from environment injection (RULES.md §1 factor 3, §8).
@@ -91,8 +92,9 @@ those get created by service code once it exists (Sprint 5).
 ### Endpoints it exposes
 | Endpoint | Purpose | Status |
 |---|---|---|
-| AMQP `5672` | Publish/consume protocol | Live, unused |
+| AMQP `5672` | Publish/consume protocol | Live, in real use by `order-service` |
 | `GET /api/overview` (management HTTP API, port `15672`) | Broker overview, stock RabbitMQ management plugin | Live |
+| `GET /api/queues/%2f/order-events.inspection` | This queue's current depth/stats | Live, verified |
 | `http://localhost:15672` | Management UI (HTML) | Live |
 
 These are stock RabbitMQ endpoints, not FDP-specific — no service exposes its own API through
@@ -100,19 +102,27 @@ RabbitMQ; it's a broker in between, not a service being called.
 
 ### Installation & dependencies
 - Docker image: `rabbitmq:4-management-alpine` (pinned in `docker-compose.yml`).
-- `order-service`, `delivery-service`, and `notification-service` will each declare
-  `spring-boot-starter-amqp` in their own `pom.xml` once built (RULES.md §4) — not present in any
-  of their POMs today.
+- `order-service/pom.xml` declares `spring-boot-starter-amqp` — `delivery-service`/
+  `notification-service` will do the same once built (Sprint 5), not present in their POMs today.
+- One real gotcha worth flagging: Spring AMQP 4.1 ships **two** JSON message converters —
+  `JacksonJsonMessageConverter` (uses `tools.jackson`, Jackson 3 — what Boot 4's own `ObjectMapper`
+  actually is) and the legacy `Jackson2JsonMessageConverter` (`com.fasterxml.jackson`, Jackson 2).
+  Using the wrong one is the same silent-mismatch trap `common`'s `MaskedFieldSerializer` already
+  had to avoid — `order-service`'s `RabbitConfig` uses the former deliberately.
 - No local tool install is required to *run* RabbitMQ (it's fully containerized); the management
   UI is served by the container itself, no separate client needed.
 
 ### For newcomers
-Run `docker compose up -d rabbitmq`, then open `http://localhost:15672` and log in with `fdp` /
-`fdp` to confirm it's up — you'll see an empty broker, no exchanges or queues, because nothing has
-declared any yet. This container being live and healthy is ahead-of-need infrastructure, not a
-sign the order → delivery → notification event flow is running. See `./mongodb.md` for where
-`notification-service` will persist what it consumes here, and `./resilience4j.md` for how
-consumers will be made resilient to broker hiccups.
+Run `docker compose up -d rabbitmq`, start `order-service`, then place an order (see
+`docs/services/order-service.md` or the checked-in Postman collection). Open
+`http://localhost:15672`, log in with `fdp`/`fdp`, go to **Queues → order-events.inspection → Get
+messages** — a real `OrderPlacedEvent` JSON payload is sitting there, `__TypeId__` header and all.
+That queue is temporary scaffolding, not the final architecture: `delivery-service`/
+`notification-service` (Sprint 5) will each declare their own real queue with its own DLQ, matching
+RULES.md §6's "every consumer queue has a dead-letter queue" — this one exists purely so publishing
+is visible before any real consumer does. See `./resilience4j.md` for how the *synchronous* half
+of `order-service`'s calls degrades gracefully; this queue is the *asynchronous* half's proof of
+life.
 
 ## Related
 - `RULES.md §6` (communication rules), `RULES.md §1` factor 9 (disposability/idempotency),

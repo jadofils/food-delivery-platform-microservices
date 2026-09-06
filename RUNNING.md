@@ -18,15 +18,15 @@ cover that.
 |---|---|---|---|---|
 | `postgres` | Docker | `fdp-postgres` | 5432 | Infra — live |
 | `mongodb` | Docker | `fdp-mongodb` | 27017 | Infra — live, unused by any service yet |
-| `rabbitmq` | Docker | `fdp-rabbitmq` | 5672 (AMQP), 15672 (mgmt UI) | Infra — live, unused by any service yet |
+| `rabbitmq` | Docker | `fdp-rabbitmq` | 5672 (AMQP), 15672 (mgmt UI) | Infra — live, in real use by `order-service` |
 | `redis` | Docker | `fdp-redis` | 6379 | Infra — live, unused by any service yet |
 | `keycloak` | Docker | `fdp-keycloak` | 8180 | Infra — live, identity provider |
 | `config-server` | Maven (`spring-boot:run`) | `config-server` | 8888 | **Implemented** |
 | `discovery-server` | Maven | `discovery-server` | 8761 | **Implemented** |
 | `customer-service` | Maven | `customer-service` | 8082 | **Implemented** (needs `postgres` + `keycloak`) |
 | `restaurant-service` | Maven | `restaurant-service` | 8083 | **Implemented** (needs `postgres` + `keycloak`) |
+| `order-service` | Maven | `order-service` | 8084 | **Implemented** (needs `postgres`, `keycloak`, `rabbitmq`, `discovery-server`, `customer-service`, `restaurant-service`) |
 | `api-gateway` | Maven | `api-gateway` | 8080 | Skeleton — boots, no routes yet |
-| `order-service` | Maven | `order-service` | 8084 | Skeleton |
 | `delivery-service` | Maven | `delivery-service` | 8085 | Skeleton |
 | `notification-service` | Maven | `notification-service` | 8086 | Skeleton |
 | `common` | — | — | — | Shared library, not a runnable service |
@@ -193,6 +193,7 @@ nothing to browse there beyond what's listed below instead.
 |---|---|---|---|
 | `customer-service` | http://localhost:8082/swagger-ui/index.html | http://localhost:8082/v3/api-docs | No — the docs page itself is `permitAll()`; you only need a token to click **Try it out** on an endpoint |
 | `restaurant-service` | http://localhost:8083/swagger-ui/index.html | http://localhost:8083/v3/api-docs | No, same as above |
+| `order-service` | http://localhost:8084/swagger-ui/index.html | http://localhost:8084/v3/api-docs | No, same as above |
 | `discovery-server` | — (no Swagger) | — | Eureka's own dashboard instead: http://localhost:8761 |
 | `config-server` | — (no Swagger) | — | It's a config-serving REST API, not a documented business API — see `curl` examples in `docs/services/config-server.md` |
 
@@ -226,17 +227,18 @@ in `credentials.md` — not repeated here to avoid the two files drifting apart.
 
 ## Common recipes
 
-### "I want to test `customer-service` and/or `restaurant-service` end to end (e.g. in Postman)"
+### "I want to test the full order flow end to end (e.g. in Postman)"
 ```bash
-docker compose up -d postgres keycloak
-# wait for both to show "healthy": docker compose ps
-./mvnw -pl customer-service -am spring-boot:run       # in one terminal
-./mvnw -pl restaurant-service -am spring-boot:run     # in another
+docker compose up -d                                    # postgres, keycloak, rabbitmq (+ the rest)
+./mvnw -pl discovery-server -am spring-boot:run          # terminal 1 -- order-service needs Eureka
+./mvnw -pl customer-service -am spring-boot:run          # terminal 2
+./mvnw -pl restaurant-service -am spring-boot:run        # terminal 3
+./mvnw -pl order-service -am spring-boot:run             # terminal 4 -- calls both of the above
 ```
-Then, per service: `postman/FDP-customer-service.postman_collection.json` and/or
-`postman/FDP-restaurant-service.postman_collection.json`, both sharing
-`postman/FDP.postman_environment.json` (import all three, select the environment, run each
-collection's folder 1 first).
+Then import all three collections (`FDP-customer-service`, `FDP-restaurant-service`,
+`FDP-order-service`) plus `FDP.postman_environment.json`, select the environment, and run each
+collection's own token/setup folders first — or just run `FDP-order-service`'s collection alone,
+its own "2. Prerequisite Setup" folder registers everything it needs.
 
 ### "I want everything currently implemented running together"
 ```bash
@@ -244,11 +246,28 @@ docker compose up -d                                                     # all 5
 ./mvnw clean package -DskipTests                                         # build every module once
 (java -jar discovery-server/target/discovery-server-0.0.1-SNAPSHOT.jar   > /tmp/discovery-server.log   2>&1 &)
 (java -jar config-server/target/config-server-0.0.1-SNAPSHOT.jar        > /tmp/config-server.log       2>&1 &)
+sleep 6
 (java -jar customer-service/target/customer-service-0.0.1-SNAPSHOT.jar  > /tmp/customer-service.log    2>&1 &)
 (java -jar restaurant-service/target/restaurant-service-0.0.1-SNAPSHOT.jar > /tmp/restaurant-service.log 2>&1 &)
+(java -jar order-service/target/order-service-0.0.1-SNAPSHOT.jar        > /tmp/order-service.log       2>&1 &)
 ```
-(`api-gateway`/`order-service`/`delivery-service`/`notification-service` can be started the same
-way, but they're skeletons today — nothing to exercise on them yet.)
+(`api-gateway`/`delivery-service`/`notification-service` can be started the same way, but they're
+skeletons today — nothing to exercise on them yet.)
+
+### "I want to see the resilience/circuit-breaker story for myself"
+```bash
+netstat -ano | grep ":8083" | grep LISTENING     # find restaurant-service's pid
+taskkill //F //PID <pid>                         # stop it
+# now place an order via Postman/curl -- expect a clean 503 in a few seconds, not a hang
+./mvnw -pl restaurant-service -am spring-boot:run   # bring it back
+# wait ~10s (the circuit breaker's wait-duration-in-open-state), then place another order --
+# it succeeds again on its own, no restart of order-service needed
+```
+
+### "I want to see the async event publish for myself"
+Place an order via Postman/curl, then open `http://localhost:15672` (login `fdp`/`fdp`) → **Queues
+→ order-events.inspection → Get messages** — a real `OrderPlacedEvent` JSON payload is sitting
+there.
 
 ### "I only need the databases/broker up, no application code running"
 ```bash
@@ -260,7 +279,7 @@ That's it — no FDP service needs to be running for this.
 
 ## Troubleshooting
 
-- **A service fails with `database "customer_db"` (or `"restaurant_db"`) `does not exist`** — this
+- **A service fails with `database "customer_db"` (or `"restaurant_db"`/`"order_db"`) `does not exist`** — this
   happens if `postgres`'s data volume already existed *before*
   `docker/postgres/init-databases.sql` was updated to create that database (init scripts only run
   against a brand-new volume). Fix: `docker exec fdp-postgres psql -U fdp -d fdp -c "CREATE DATABASE customer_db;"`
@@ -281,4 +300,5 @@ That's it — no FDP service needs to be running for this.
 - `docs/RULES.md` §2 (service inventory, ports), §10 (containerization plan, Sprint 7)
 - `docs/SPRINTS.md` (what's actually built vs. still planned)
 - `credentials.md` (seeded Keycloak demo accounts)
-- `postman/` (collections + shared environment for exercising `customer-service` and `restaurant-service`)
+- `postman/` (collections + shared environment for exercising `customer-service`,
+  `restaurant-service`, and `order-service`)
