@@ -101,13 +101,21 @@ cleanly against a not-yet-ready database. First start imports the `fdp` realm au
 ### Endpoints it exposes
 | Endpoint | Purpose | Status |
 |---|---|---|
-| `POST /realms/fdp/protocol/openid-connect/token` | Obtain an access token (password grant) | Live, verified for all 4 demo users |
+| `POST /realms/fdp/protocol/openid-connect/token` (password grant) | Login | Live, verified for all 4 demo users |
+| `POST /realms/fdp/protocol/openid-connect/token` (refresh_token grant) | Get a new access token without re-sending the password | Live, verified |
+| `GET /realms/fdp/protocol/openid-connect/userinfo` | Who-am-I / confirm a token is still valid | Live, verified — requires the token to have been requested with `scope=openid` (easy to miss; the default `credentials.md` login example doesn't ask for it) |
+| `POST /realms/fdp/protocol/openid-connect/logout` | Logout — invalidates the session tied to a refresh token | Live, verified (confirmed the refresh token is rejected afterward) |
 | `GET /realms/fdp/protocol/openid-connect/certs` | JWKS — public keys for signature verification | Live |
 | `GET /realms/fdp/.well-known/openid-configuration` | OIDC discovery document | Live (stock Keycloak behavior) |
+| `POST /admin/realms/fdp/users` (admin token required) | Create a new user account | Live, verified — see `credentials.md` "Register a new customer" |
 | `http://localhost:8180` (admin console) | Realm/client/user administration UI | Live |
 
 These are all stock Keycloak endpoints, not FDP code — nothing here is custom-built or specific to
-this repo beyond the realm-import configuration.
+this repo beyond the realm-import configuration. **Self-service registration
+(`registrationAllowed`) is currently `false`** on the `fdp` realm — no "Register" link exists on
+Keycloak's own login page today; new accounts are created via the admin console or admin REST API
+only (see `credentials.md`). Turning it on is a one-line realm-config change, deliberately not
+flipped without being asked first, since it's a real identity-provider security setting.
 
 ### Installation & dependencies
 - Docker image: `quay.io/keycloak/keycloak:26.0` (pinned in `docker-compose.yml`).
