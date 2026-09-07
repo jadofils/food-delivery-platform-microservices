@@ -16,3 +16,6 @@ CREATE DATABASE restaurant_db;
 
 -- order-service (Sprint 3) -- Flyway migrations under order-service/src/main/resources/db/migration.
 CREATE DATABASE order_db;
+
+-- delivery-service (Sprint 5) -- Flyway migrations under delivery-service/src/main/resources/db/migration.
+CREATE DATABASE delivery_db;

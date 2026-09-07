@@ -1,0 +1,425 @@
+{
+	"info": {
+		"_postman_id": "fdp-delivery-service-collection",
+		"name": "FDP - delivery-service (event-driven assignment + agent lifecycle)",
+		"description": "delivery-service has no write API for creating a delivery -- every assignment is created automatically by consuming order-service's real OrderPlacedEvent (RULES.md §6). This collection places a real order through order-service to generate one, then exercises the delivery-agent lifecycle (claim -> pickup -> deliver) through delivery-service's own REST API, publishing a real DeliveryStatusUpdatedEvent on every transition. Requires `customer-service` (:8082), `restaurant-service` (:8083), `order-service` (:8084), `delivery-service` (:8085), `notification-service` (:8086), `discovery-server` (:8761), and `config-server` (:8888) all running -- see RUNNING.md. Import the sibling `FDP.postman_environment.json` and select it before running.\n\nRun order: **1. Get Tokens**, then **2. Prerequisite Setup** (self-contained), then **3. Trigger Auto-Assignment via Order Placement**, then **4. Agent Lifecycle**, then **5. Negative / Security Tests**.\n\nTo see the notification loop close: after **4. Agent Lifecycle** completes, call `GET {{notificationServiceUrl}}/api/notifications/me` with the customer's own token -- ORDER_PLACED, DELIVERY_ASSIGNED, DELIVERY_PICKED_UP, and DELIVERY_DELIVERED all show up as separate real notification records, one per action.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Get Tokens (Keycloak)",
+			"item": [
+				{
+					"name": "Get Customer Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const body = pm.response.json();",
+									"pm.test('token issued', () => pm.expect(body.access_token).to.be.a('string'));",
+									"pm.environment.set('customerToken', body.access_token);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{ "key": "grant_type", "value": "password" },
+								{ "key": "client_id", "value": "{{clientId}}" },
+								{ "key": "username", "value": "{{customerUsername}}" },
+								{ "key": "password", "value": "{{customerPassword}}" }
+							]
+						},
+						"url": {
+							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+							"host": ["{{keycloakUrl}}"],
+							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+						}
+					}
+				},
+				{
+					"name": "Get Restaurant Owner Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const body = pm.response.json();",
+									"pm.test('token issued', () => pm.expect(body.access_token).to.be.a('string'));",
+									"pm.environment.set('restaurantOwnerToken', body.access_token);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{ "key": "grant_type", "value": "password" },
+								{ "key": "client_id", "value": "{{clientId}}" },
+								{ "key": "username", "value": "{{restaurantOwnerUsername}}" },
+								{ "key": "password", "value": "{{restaurantOwnerPassword}}" }
+							]
+						},
+						"url": {
+							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+							"host": ["{{keycloakUrl}}"],
+							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+						}
+					}
+				},
+				{
+					"name": "Get Delivery Agent Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const body = pm.response.json();",
+									"pm.test('token issued', () => pm.expect(body.access_token).to.be.a('string'));",
+									"pm.environment.set('deliveryAgentToken', body.access_token);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{ "key": "grant_type", "value": "password" },
+								{ "key": "client_id", "value": "{{clientId}}" },
+								{ "key": "username", "value": "{{deliveryAgentUsername}}" },
+								{ "key": "password", "value": "{{deliveryAgentPassword}}" }
+							]
+						},
+						"url": {
+							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+							"host": ["{{keycloakUrl}}"],
+							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "2. Prerequisite Setup (self-contained)",
+			"description": "Registers everything an order needs to reference: a customer profile + address (customer-service) and a restaurant + menu item (restaurant-service). Safe to skip if you already ran the other collections against a fresh database.",
+			"item": [
+				{
+					"name": "Register Customer Profile",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('created or already exists', () => [200,201,409].includes(pm.response.code));"] }
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"+15551234567\"\n}", "options": { "raw": { "language": "json" } } },
+						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+					}
+				},
+				{
+					"name": "Add Delivery Address",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('created', () => pm.response.to.have.status(201));",
+									"pm.environment.set('addressId', pm.response.json().id);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"label\": \"Home\",\n  \"street\": \"12 Kigali Ave\",\n  \"city\": \"Kigali\",\n  \"state\": \"Kigali City\",\n  \"postalCode\": \"00000\",\n  \"country\": \"Rwanda\",\n  \"isDefault\": true\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{customerServiceUrl}}/api/customers/me/addresses", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me", "addresses"] }
+					}
+				},
+				{
+					"name": "Register Restaurant",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('created or already exists', () => [200,201,409].includes(pm.response.code));", "if (pm.response.code === 201) { pm.environment.set('restaurantId', pm.response.json().id); }"] }
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{restaurantOwnerToken}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Kigali Grill\",\n  \"description\": \"Grilled specialties\",\n  \"cuisineType\": \"Rwandan\",\n  \"street\": \"1 Downtown Ave\",\n  \"city\": \"Kigali\",\n  \"state\": \"Kigali City\",\n  \"postalCode\": \"00000\",\n  \"country\": \"Rwanda\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{restaurantServiceUrl}}/api/restaurants/me", "host": ["{{restaurantServiceUrl}}"], "path": ["api", "restaurants", "me"] }
+					}
+				},
+				{
+					"name": "Get My Restaurant (fills restaurantId, and ensure it's open)",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.environment.set('restaurantId', pm.response.json().id);"] }
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{restaurantOwnerToken}}" }],
+						"url": { "raw": "{{restaurantServiceUrl}}/api/restaurants/me", "host": ["{{restaurantServiceUrl}}"], "path": ["api", "restaurants", "me"] }
+					}
+				},
+				{
+					"name": "Make Sure The Restaurant Is Open",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.test('open', () => pm.expect(pm.response.json().isOpen).to.eql(true));"] }
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{restaurantOwnerToken}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Kigali Grill\",\n  \"description\": \"Grilled specialties\",\n  \"cuisineType\": \"Rwandan\",\n  \"street\": \"1 Downtown Ave\",\n  \"city\": \"Kigali\",\n  \"state\": \"Kigali City\",\n  \"postalCode\": \"00000\",\n  \"country\": \"Rwanda\",\n  \"isOpen\": true\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{restaurantServiceUrl}}/api/restaurants/me", "host": ["{{restaurantServiceUrl}}"], "path": ["api", "restaurants", "me"] }
+					}
+				},
+				{
+					"name": "Add Menu Item",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('created', () => pm.response.to.have.status(201));",
+									"pm.environment.set('menuItemId', pm.response.json().id);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{restaurantOwnerToken}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Brochette\",\n  \"description\": \"Grilled skewers\",\n  \"price\": 5.50,\n  \"category\": \"Mains\",\n  \"available\": true\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{restaurantServiceUrl}}/api/restaurants/me/menu-items", "host": ["{{restaurantServiceUrl}}"], "path": ["api", "restaurants", "me", "menu-items"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "3. Trigger Auto-Assignment via Order Placement",
+			"description": "delivery-service never sees this request -- it goes straight to order-service. Placing the order publishes OrderPlacedEvent, which delivery-service consumes independently (RULES.md §6) and turns into a real PENDING delivery assignment with no synchronous call from order-service.",
+			"item": [
+				{
+					"name": "Place Order (publishes OrderPlacedEvent)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('created', () => pm.response.to.have.status(201));",
+									"const body = pm.response.json();",
+									"pm.test('status is PLACED', () => pm.expect(body.status).to.eql('PLACED'));",
+									"pm.environment.set('orderId', body.id);"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"restaurantId\": {{restaurantId}},\n  \"deliveryAddressId\": {{addressId}},\n  \"items\": [\n    {\"menuItemId\": {{menuItemId}}, \"quantity\": 1}\n  ]\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{orderServiceUrl}}/api/orders/me", "host": ["{{orderServiceUrl}}"], "path": ["api", "orders", "me"] }
+					}
+				},
+				{
+					"name": "Find The Auto-Created Assignment (poll unassigned list)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));",
+									"const body = pm.response.json();",
+									"const mine = body.content.find(d => d.orderId === pm.environment.get('orderId'));",
+									"pm.test('a PENDING assignment exists for this order', () => pm.expect(mine).to.not.be.undefined);",
+									"if (mine) { pm.environment.set('deliveryId', mine.id); }"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{deliveryAgentToken}}" }],
+						"url": { "raw": "{{deliveryServiceUrl}}/api/deliveries/unassigned", "host": ["{{deliveryServiceUrl}}"], "path": ["api", "deliveries", "unassigned"] },
+						"description": "Async consumption isn't instant -- if this runs immediately after placing the order and doesn't see it yet, re-send this one request a moment later."
+					}
+				}
+			]
+		},
+		{
+			"name": "4. Agent Lifecycle",
+			"description": "Every step here publishes a real DeliveryStatusUpdatedEvent -- notification-service consumes each one independently.",
+			"item": [
+				{
+					"name": "Claim",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.test('now ASSIGNED', () => pm.expect(pm.response.json().status).to.eql('ASSIGNED'));"] }
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Authorization", "value": "Bearer {{deliveryAgentToken}}" }],
+						"url": { "raw": "{{deliveryServiceUrl}}/api/deliveries/{{deliveryId}}/claim", "host": ["{{deliveryServiceUrl}}"], "path": ["api", "deliveries", "{{deliveryId}}", "claim"] }
+					}
+				},
+				{
+					"name": "Claim Again -> 409 Conflict",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('conflict', () => pm.response.to.have.status(409));"] }
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Authorization", "value": "Bearer {{deliveryAgentToken}}" }],
+						"url": { "raw": "{{deliveryServiceUrl}}/api/deliveries/{{deliveryId}}/claim", "host": ["{{deliveryServiceUrl}}"], "path": ["api", "deliveries", "{{deliveryId}}", "claim"] }
+					}
+				},
+				{
+					"name": "Pick Up",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.test('now PICKED_UP', () => pm.expect(pm.response.json().status).to.eql('PICKED_UP'));"] }
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Authorization", "value": "Bearer {{deliveryAgentToken}}" }],
+						"url": { "raw": "{{deliveryServiceUrl}}/api/deliveries/{{deliveryId}}/pickup", "host": ["{{deliveryServiceUrl}}"], "path": ["api", "deliveries", "{{deliveryId}}", "pickup"] }
+					}
+				},
+				{
+					"name": "Deliver",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.test('now DELIVERED', () => pm.expect(pm.response.json().status).to.eql('DELIVERED'));"] }
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Authorization", "value": "Bearer {{deliveryAgentToken}}" }],
+						"url": { "raw": "{{deliveryServiceUrl}}/api/deliveries/{{deliveryId}}/deliver", "host": ["{{deliveryServiceUrl}}"], "path": ["api", "deliveries", "{{deliveryId}}", "deliver"] }
+					}
+				},
+				{
+					"name": "My Deliveries (agent's own claimed/in-progress list)",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.test('paged shape', () => pm.expect(pm.response.json()).to.have.property('content'));"] }
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{deliveryAgentToken}}" }],
+						"url": { "raw": "{{deliveryServiceUrl}}/api/deliveries/me", "host": ["{{deliveryServiceUrl}}"], "path": ["api", "deliveries", "me"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "5. Negative / Security Tests",
+			"item": [
+				{
+					"name": "No Token -> 401",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('unauthorized', () => pm.response.to.have.status(401));"] }
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{deliveryServiceUrl}}/api/deliveries/{{deliveryId}}", "host": ["{{deliveryServiceUrl}}"], "path": ["api", "deliveries", "{{deliveryId}}"] }
+					}
+				},
+				{
+					"name": "Customer Cannot Browse Or Claim Deliveries -> 403",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('forbidden -- lacks delivery:read', () => pm.response.to.have.status(403));"] }
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+						"url": { "raw": "{{deliveryServiceUrl}}/api/deliveries/{{deliveryId}}", "host": ["{{deliveryServiceUrl}}"], "path": ["api", "deliveries", "{{deliveryId}}"] },
+						"description": "customer@fdp.test's role set doesn't include delivery:read/delivery:status:update -- only ADMIN and DELIVERY_AGENT carry those permissions (docker/keycloak/fdp-realm.json)."
+					}
+				}
+			]
+		}
+	]
+}

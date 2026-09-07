@@ -236,18 +236,37 @@ notification/audit trail.
   14-request Postman collection (`postman/FDP-notification-service.postman_collection.json`), both
   green.
 - `delivery-service` (`delivery_db`) consumes `OrderPlacedEvent`, auto-creates delivery
-  assignments, publishes `DeliveryStatusUpdatedEvent`. Consumer is idempotent. **Not done.**
+  assignments, publishes `DeliveryStatusUpdatedEvent`. Consumer is idempotent. **Done and verified
+  live:** `DeliveryAssignment` Postgres entity (`order_id` unique-indexed — the real idempotency
+  guard, same lesson `notification-service`'s own listener already taught this codebase),
+  `OrderEventListener` consuming `fdp.order-events` off its own queue + DLQ
+  (`delivery-service.order-events` / `.dlq`) to auto-create a `PENDING` assignment on
+  `OrderPlacedEvent` and cancel it on `OrderCancelledEvent`; `GET /api/deliveries/{id}`,
+  `GET /api/deliveries/me`, `GET /api/deliveries/unassigned` (all `delivery:read`), and
+  `POST /api/deliveries/{id}/{claim,pickup,deliver}` (`delivery:status:update`, forward-only status
+  transitions, ownership-checked). Publishes `DeliveryStatusUpdatedEvent` to `fdp.delivery-events`
+  (an exchange this service owns) on every transition. Exercised end to end against a real running
+  `order-service`: a real order placement produced a real `PENDING` assignment with no synchronous
+  call, and claim → pickup → deliver each produced a real event — confirmed via
+  `notification-service` (extended to consume this new event type too, see below) showing all four
+  notifications (`ORDER_PLACED`, `DELIVERY_ASSIGNED`, `DELIVERY_PICKED_UP`, `DELIVERY_DELIVERED`)
+  for the same order. A cancelled order correctly cancelled its assignment. 6 Testcontainers-backed
+  tests (Postgres + RabbitMQ) plus an 18-request Postman collection
+  (`postman/FDP-delivery-service.postman_collection.json`, 25 assertions), both green.
+  `notification-service` gained a second listener/queue (`DeliveryEventListener` /
+  `notification-service.delivery-events`) to consume this event, completing the consumption side
+  `docs/services/notification-service.md` was originally scoped for.
 - `api-gateway` route for `/api/deliveries/**` added. **Not done** (`api-gateway` itself doesn't
   exist yet — Sprint 4 scope, not started).
 
 **Exit criteria:** placing an order produces a delivery record automatically with no synchronous
 call from `order-service` into `delivery-service`; a failed/poisoned message lands in the DLQ
 instead of blocking the queue; notification records are queryable via `notification-service`'s
-API. **Partially met:** the notification half is done and verified live (including the DLQ wiring,
-though a real poison-message-reaches-the-DLQ scenario hasn't been deliberately triggered end to
-end — the mechanism is config, not custom code, and is the same pattern already proven this way in
-Sprint 3). The delivery half (auto-created delivery records, `DeliveryStatusUpdatedEvent`) remains
-open.
+API. **Met and verified live**, for everything except `api-gateway` (Sprint 4, not built, so
+`/api/deliveries/**` has no gateway route yet — `delivery-service` itself is reachable directly). A
+real poison-message-reaches-the-DLQ scenario hasn't been deliberately triggered end to end for
+either consumer — the mechanism is config, not custom code, and is the same pattern already proven
+this way in Sprint 3.
 
 ---
 
@@ -257,29 +276,43 @@ open.
 
 - Micrometer Tracing (Brave) → Zipkin on every service; trace continuity verified across a full
   order → delivery → notification flow, including the RabbitMQ hop. **Done and verified live for
-  every service that exists today** (`customer-service`, `restaurant-service`, `order-service`,
-  `notification-service`) — pulled forward the same way order-service's async publish was pulled
-  forward into Sprint 3. A real order placement produces one trace spanning all four services plus
-  the RabbitMQ hop, confirmed both via `GET /api/v2/trace/{traceId}` and Zipkin's own
-  `/api/v2/dependencies` call graph, which matches the real architecture exactly
-  (`order-service -> customer-service`, `order-service -> restaurant-service`,
-  `order-service -> rabbitmq -> notification-service`). `delivery-service`/`api-gateway` (Sprint 5/4,
-  not built) can't participate yet. Two non-obvious gotchas surfaced and fixed — see
-  `docs/technologies/zipkin.md`'s "Getting started" section for both. Also closed a real,
-  previously-reported gap as a side effect: every error response's `traceId` field was always
-  `null` before this; it's now a real, directly-lookup-able Zipkin trace ID.
+  every domain service that exists today** (`customer-service`, `restaurant-service`,
+  `order-service`, `delivery-service`, `notification-service`) — pulled forward the same way
+  order-service's async publish was pulled forward into Sprint 3, extended to `delivery-service` the
+  same day it was built. A real order placement now produces **one trace spanning all five domain
+  services plus RabbitMQ plus Redis** — `order-service -> customer-service`,
+  `order-service -> restaurant-service` (which itself hits Redis for its cache),
+  `order-service -> rabbitmq -> delivery-service`, `order-service -> rabbitmq ->
+  notification-service` — confirmed via `GET /api/v2/trace/{traceId}` showing every hop under one
+  shared trace ID. `api-gateway` (Sprint 4, not built) can't participate yet. Two non-obvious
+  gotchas surfaced and fixed along the way — see `docs/technologies/zipkin.md`'s "Getting started"
+  section for both. Also closed a real, previously-reported gap as a side effect: every error
+  response's `traceId` field was always `null` before this; it's now a real, directly-lookup-able
+  Zipkin trace ID.
+- Structured JSON logging to stdout (RULES.md §1 factor 11) on every service that has any code at
+  all — **done**, `logging.structured.format.console=ecs` (Spring Boot's own native structured
+  logging, no extra dependency), verified live: every log line emitted during an active trace
+  carries flat `traceId`/`spanId` fields automatically, the same id shown in Zipkin and in any error
+  response's `traceId` field (§13's "one correlation ID, three places" — two of three now real, the
+  third, Kibana, is the remaining piece below). `/actuator/loggers` also exposed on every service
+  with an actuator dependency, so a package's log level can be read and changed at runtime with no
+  restart.
 - Elasticsearch + Logstash + Kibana added to `docker-compose.yml`; every service's stdout JSON
-  logs land in Kibana, correlated by trace ID. **Not done.**
+  logs land in Kibana, correlated by trace ID. **Not done** — the JSON logs themselves exist now
+  (see above), just not yet shipped anywhere.
 - Actuator health/metrics/circuitbreaker endpoints exposed and verified on every service. Health
-  was already exposed and verified per-service as each was built; `circuitbreakers` is exposed on
-  `order-service` specifically (its only service with circuit breakers, Sprint 3). **Not done:**
-  `/actuator/metrics`/`/actuator/prometheus` are not yet exposed anywhere (Prometheus/Grafana are
-  explicitly Sprint 9 scope, RULES.md §13).
+  was already exposed and verified per-service as each was built, now with full component detail
+  (`management.endpoint.health.show-details=always`); `circuitbreakers` is exposed on
+  `order-service` specifically (its only service with circuit breakers, Sprint 3); `info` is now
+  exposed everywhere an actuator dependency exists. **Not done:** `/actuator/metrics`/
+  `/actuator/prometheus` are not yet exposed anywhere (Prometheus/Grafana are explicitly Sprint 9
+  scope, RULES.md §13).
 
 **Exit criteria:** a single order can be traced end-to-end in Zipkin across all five services it
 touches, and its logs can be found in Kibana filtered by that trace ID. **Partially met:** the
-tracing half is done and verified live across every service that exists today (four, not five —
-`delivery-service` doesn't exist yet). The Kibana/logs half remains open.
+tracing half is done and verified live across all five domain services — confirmed as one real
+trace, not five separate ones. The Kibana/logs half remains open (the JSON logs exist; nothing
+ships them to Elasticsearch yet).
 
 ---
 

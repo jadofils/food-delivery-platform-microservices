@@ -6,7 +6,8 @@
  *
  * <p>Naming convention: {@code <Entity><PastTenseVerb>Event} (RULES.md §6) —
  * {@link food_delivery.Platform.common.event.OrderPlacedEvent},
- * {@link food_delivery.Platform.common.event.OrderCancelledEvent}. Every event carries an
+ * {@link food_delivery.Platform.common.event.OrderCancelledEvent},
+ * {@link food_delivery.Platform.common.event.DeliveryStatusUpdatedEvent}. Every event carries an
  * {@code eventId} so a consumer can dedupe on it — RabbitMQ guarantees at-least-once delivery, not
  * exactly-once, so every consumer must be idempotent (RULES.md §6, §1 factor 9).
  */

@@ -18,18 +18,18 @@ cover that.
 |---|---|---|---|---|
 | `postgres` | Docker | `fdp-postgres` | 5432 | Infra — live |
 | `mongodb` | Docker | `fdp-mongodb` | 27017 | Infra — live, in real use by `notification-service` |
-| `rabbitmq` | Docker | `fdp-rabbitmq` | 5672 (AMQP), 15672 (mgmt UI) | Infra — live, in real use by `order-service` (publish) and `notification-service` (consume) |
+| `rabbitmq` | Docker | `fdp-rabbitmq` | 5672 (AMQP), 15672 (mgmt UI) | Infra — live, in real use by `order-service` (publish), `delivery-service` (consume + publish), and `notification-service` (consume) |
 | `redis` | Docker | `fdp-redis` | 6379 (or `REDIS_PORT` — see Troubleshooting if 6379 is already taken on your machine) | Infra — live, in real use by `restaurant-service` (caching) |
 | `keycloak` | Docker | `fdp-keycloak` | 8180 | Infra — live, identity provider |
-| `zipkin` | Docker | `fdp-zipkin` | 9411 | Infra — live, in real use by all four built services (distributed tracing) |
+| `zipkin` | Docker | `fdp-zipkin` | 9411 | Infra — live, in real use by all five domain services (distributed tracing) |
 | `config-server` | Maven (`spring-boot:run`) | `config-server` | 8888 | **Implemented** |
 | `discovery-server` | Maven | `discovery-server` | 8761 | **Implemented** |
 | `customer-service` | Maven | `customer-service` | 8082 | **Implemented** (needs `postgres` + `keycloak`) |
 | `restaurant-service` | Maven | `restaurant-service` | 8083 | **Implemented** (needs `postgres`, `keycloak`, `redis`) |
 | `order-service` | Maven | `order-service` | 8084 | **Implemented** (needs `postgres`, `keycloak`, `rabbitmq`, `discovery-server`, `customer-service`, `restaurant-service`) |
+| `delivery-service` | Maven | `delivery-service` | 8085 | **Implemented** (needs `postgres`, `keycloak`, `rabbitmq`, `discovery-server`; place an order via `order-service` to generate data) |
 | `notification-service` | Maven | `notification-service` | 8086 | **Implemented** (needs `mongodb`, `keycloak`, `rabbitmq`, `discovery-server`; place an order via `order-service` to generate data) |
 | `api-gateway` | Maven | `api-gateway` | 8080 | Skeleton — boots, no routes yet |
-| `delivery-service` | Maven | `delivery-service` | 8085 | Skeleton |
 | `common` | — | — | — | Shared library, not a runnable service |
 
 "Skeleton" services start fine (`spring-boot:run` boots successfully) but have no business
@@ -195,6 +195,7 @@ nothing to browse there beyond what's listed below instead.
 | `customer-service` | http://localhost:8082/swagger-ui/index.html | http://localhost:8082/v3/api-docs | No — the docs page itself is `permitAll()`; you only need a token to click **Try it out** on an endpoint |
 | `restaurant-service` | http://localhost:8083/swagger-ui/index.html | http://localhost:8083/v3/api-docs | No, same as above |
 | `order-service` | http://localhost:8084/swagger-ui/index.html | http://localhost:8084/v3/api-docs | No, same as above |
+| `delivery-service` | http://localhost:8085/swagger-ui/index.html | http://localhost:8085/v3/api-docs | No, same as above |
 | `notification-service` | http://localhost:8086/swagger-ui/index.html | http://localhost:8086/v3/api-docs | No, same as above |
 | `discovery-server` | — (no Swagger) | — | Eureka's own dashboard instead: http://localhost:8761 |
 | `config-server` | — (no Swagger) | — | It's a config-serving REST API, not a documented business API — see `curl` examples in `docs/services/config-server.md` |
@@ -229,10 +230,11 @@ in `credentials.md` — not repeated here to avoid the two files drifting apart.
 
 ## Distributed tracing (Zipkin)
 
-All four built services report real spans. Verified live: placing a real order produces one trace
-spanning `order-service` → `customer-service`/`restaurant-service` (Feign) → RabbitMQ →
-`notification-service` — see `docs/technologies/zipkin.md` for the two dependency/config gotchas
-that made this actually work.
+All five domain services report real spans. Verified live: placing a real order produces one trace
+spanning `order-service` → `customer-service`/`restaurant-service` (Feign, the latter also hitting
+Redis) → RabbitMQ → `delivery-service` (auto-creates the delivery assignment) → RabbitMQ →
+`notification-service` — see `docs/technologies/zipkin.md` for the dependency/config gotchas that
+made this actually work.
 
 | What | Where |
 |---|---|
@@ -253,14 +255,15 @@ docker compose up -d                                    # postgres, mongodb, key
 ./mvnw -pl customer-service -am spring-boot:run          # terminal 2
 ./mvnw -pl restaurant-service -am spring-boot:run        # terminal 3
 ./mvnw -pl order-service -am spring-boot:run             # terminal 4 -- calls both of the above
-./mvnw -pl notification-service -am spring-boot:run      # terminal 5 -- consumes order-service's events
+./mvnw -pl delivery-service -am spring-boot:run          # terminal 5 -- consumes order-service's events
+./mvnw -pl notification-service -am spring-boot:run      # terminal 6 -- consumes order-/delivery-service's events
 ```
-Then import all four collections (`FDP-customer-service`, `FDP-restaurant-service`,
-`FDP-order-service`, `FDP-notification-service`) plus `FDP.postman_environment.json`, select the
-environment, and run each collection's own token/setup folders first — or just run
-`FDP-notification-service`'s collection alone, its own "2. Prerequisite Setup" folder registers
-everything it needs and its "3. Trigger Events via Order Placement" folder places a real order
-through `order-service` on your behalf.
+Then import all five collections (`FDP-customer-service`, `FDP-restaurant-service`,
+`FDP-order-service`, `FDP-delivery-service`, `FDP-notification-service`) plus
+`FDP.postman_environment.json`, select the environment, and run each collection's own token/setup
+folders first — or just run `FDP-delivery-service`'s collection alone, its own "2. Prerequisite
+Setup" folder registers everything it needs and its "3. Trigger Auto-Assignment via Order
+Placement" folder places a real order through `order-service` on your behalf.
 
 ### "I want everything currently implemented running together"
 ```bash
@@ -272,10 +275,11 @@ sleep 6
 (java -jar customer-service/target/customer-service-0.0.1-SNAPSHOT.jar  > /tmp/customer-service.log    2>&1 &)
 (java -jar restaurant-service/target/restaurant-service-0.0.1-SNAPSHOT.jar > /tmp/restaurant-service.log 2>&1 &)
 (java -jar order-service/target/order-service-0.0.1-SNAPSHOT.jar        > /tmp/order-service.log       2>&1 &)
+(java -jar delivery-service/target/delivery-service-0.0.1-SNAPSHOT.jar  > /tmp/delivery-service.log    2>&1 &)
 (java -jar notification-service/target/notification-service-0.0.1-SNAPSHOT.jar > /tmp/notification-service.log 2>&1 &)
 ```
-(`api-gateway`/`delivery-service` can be started the same way, but they're skeletons today —
-nothing to exercise on them yet.)
+(`api-gateway` can be started the same way, but it's a skeleton today — nothing to exercise on it
+yet.)
 
 ### "I want to see the resilience/circuit-breaker story for myself"
 ```bash
@@ -301,6 +305,16 @@ notification record is there within a couple of seconds, persisted in MongoDB's 
 exact same event twice from RabbitMQ's management UI (**Queues →
 notification-service.order-events**, re-publish a message you already got via Get Messages) —
 exactly one notification results, not two.
+
+### "I want to see the full order-to-delivery story for myself"
+Place an order via Postman/curl, then `GET {{deliveryServiceUrl}}/api/deliveries/unassigned` (as
+`delivery-agent@fdp.test`) — a real `PENDING` assignment is already there, created with no
+synchronous call from `order-service`. `POST /api/deliveries/{id}/claim`, then `.../pickup`, then
+`.../deliver` (same token) — each call publishes a real `DeliveryStatusUpdatedEvent`. Now
+`GET {{notificationServiceUrl}}/api/notifications/me` as the customer: `ORDER_PLACED`,
+`DELIVERY_ASSIGNED`, `DELIVERY_PICKED_UP`, and `DELIVERY_DELIVERED` all show up as separate real
+records for the same order. Cancel a *different* order before claiming its delivery, and its
+assignment flips straight to `CANCELLED` and drops out of `/unassigned`.
 
 ### "I want to see the distributed trace for myself"
 With all four built services and `zipkin` running, place a real order via Postman/curl, then open
@@ -331,10 +345,10 @@ That's it — no FDP service needs to be running for this.
 
 ## Troubleshooting
 
-- **A service fails with `database "customer_db"` (or `"restaurant_db"`/`"order_db"`) `does not exist`** — this
+- **A service fails with `database "customer_db"` (or `"restaurant_db"`/`"order_db"`/`"delivery_db"`) `does not exist`** — this
   happens if `postgres`'s data volume already existed *before*
   `docker/postgres/init-databases.sql` was updated to create that database (init scripts only run
-  against a brand-new volume). Fix: `docker exec fdp-postgres psql -U fdp -d fdp -c "CREATE DATABASE customer_db;"`
+  against a brand-new volume). Fix: `docker exec fdp-postgres psql -U fdp -d fdp -c "CREATE DATABASE delivery_db;"`
   (swap the name), or `docker compose down -v && docker compose up -d` for a fully fresh volume.
 - **Keycloak container is `starting`, not `healthy`, for a while** — normal on first start; realm
   import can take 20-40 seconds. Wait for `docker compose ps` to show `healthy` before starting
@@ -357,4 +371,4 @@ That's it — no FDP service needs to be running for this.
 - `docs/SPRINTS.md` (what's actually built vs. still planned)
 - `credentials.md` (seeded Keycloak demo accounts)
 - `postman/` (collections + shared environment for exercising `customer-service`,
-  `restaurant-service`, `order-service`, and `notification-service`)
+  `restaurant-service`, `order-service`, `delivery-service`, and `notification-service`)

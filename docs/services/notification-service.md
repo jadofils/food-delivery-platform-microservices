@@ -1,11 +1,11 @@
 # notification-service
 
 ## Responsibility
-Consumes domain events and persists the notification/audit log (RULES.md §2). Today it consumes
-`OrderPlacedEvent`/`OrderCancelledEvent` from `order-service` and persists a permanent record of
-what was sent, to whom, over which channel, and its delivery status (RULES.md §5,
-`notification_db`). `DeliveryStatusUpdatedEvent` (from `delivery-service`, Sprint 5, not built
-yet) is planned but not wired — there is no publisher for it yet.
+Consumes domain events and persists the notification/audit log (RULES.md §2). It consumes
+`OrderPlacedEvent`/`OrderCancelledEvent` from `order-service` and `DeliveryStatusUpdatedEvent` from
+`delivery-service`, persisting a permanent record of what was sent, to whom, over which channel, and
+its delivery status (RULES.md §5, `notification_db`) — every event type this service was originally
+scoped to consume is now wired up and verified live.
 
 ## Why it's a separate service
 This is scope added beyond `ReadMe.md`'s original four services (RULES.md, opening section) —
@@ -41,21 +41,30 @@ place, is checked in at `postman/FDP-notification-service.postman_collection.jso
 
 ## Async consumption (RULES.md §6, §9 factor 9)
 
-`OrderEventListener` consumes off `notification-service.order-events`, a queue this service
-declares and owns exclusively — bound to `order-service`'s `fdp.order-events` topic exchange with
-pattern `order.#`, never sharing a queue with any other consumer. A dedicated dead-letter queue
-(`notification-service.order-events.dlq`) is wired purely through queue arguments
-(`x-dead-letter-exchange`/`x-dead-letter-routing-key`) plus
-`spring.rabbitmq.listener.simple.retry.*` — no custom recovery code needed. `order-service`'s
-events are the shared wire contract (`common.event.OrderPlacedEvent`/`OrderCancelledEvent`), so
-neither side redefines the payload shape independently.
+Two listeners, two entirely separate queues (never shared, per RULES.md §6):
+`OrderEventListener` consumes `OrderPlacedEvent`/`OrderCancelledEvent` off
+`notification-service.order-events`, bound to `order-service`'s `fdp.order-events` topic exchange
+with pattern `order.#`. `DeliveryEventListener` consumes `DeliveryStatusUpdatedEvent` off
+`notification-service.delivery-events`, bound to `delivery-service`'s `fdp.delivery-events` topic
+exchange with pattern `delivery.#`. Each has its own dedicated dead-letter queue
+(`notification-service.order-events.dlq` / `notification-service.delivery-events.dlq`), wired
+purely through queue arguments (`x-dead-letter-exchange`/`x-dead-letter-routing-key`) plus
+`spring.rabbitmq.listener.simple.retry.*` — no custom recovery code needed. Every event is a shared
+wire contract in `common.event` (`OrderPlacedEvent`/`OrderCancelledEvent`/
+`DeliveryStatusUpdatedEvent`), so no side redefines a payload shape independently.
 
-The listener accepts the raw `org.springframework.amqp.core.Message` and converts it explicitly
-via the injected `MessageConverter`, rather than declaring a concrete/`Object`-typed parameter for
+Both listeners accept the raw `org.springframework.amqp.core.Message` and convert it explicitly via
+the injected `MessageConverter`, rather than declaring a concrete/`Object`-typed parameter for
 `@RabbitListener` to convert automatically — a generic `Object` parameter doesn't give Spring's
 listener adapter enough type information to know it should convert at all, and it silently hands
 the method the untouched `Message` instead. This was caught by this service's own integration test,
 not discovered in production.
+
+Verified live: claiming, picking up, and delivering a real delivery assignment (on `delivery-service`)
+each produced a real `NotificationRecord` (`DELIVERY_ASSIGNED`/`DELIVERY_PICKED_UP`/
+`DELIVERY_DELIVERED`), visible via `GET /api/notifications/me` alongside the customer's
+`ORDER_PLACED` record for the same order — the full order-to-delivery notification story in one
+place.
 
 ### Idempotent consumption — a real bug, not just a design note
 
@@ -77,11 +86,11 @@ concern — but it delayed finding the real one.
 The actual fix, once isolated: `NotificationRecord.eventId` carries a unique index
 (`@Indexed(unique = true)`), and `spring.data.mongodb.auto-index-creation=true` is now set
 explicitly — without it, Spring Data MongoDB never actually creates that index, and
-`@Indexed(unique = true)` is silently unenforced. `OrderEventListener` now treats a losing
-concurrent write's `DuplicateKeyException` as "already processed, skip" — the database's own
-uniqueness constraint is the real guarantee; the `findByEventId` check that runs first is kept
-purely as a fast-path optimization to skip an unnecessary write on the common (non-concurrent)
-redelivery case, not relied on for correctness.
+`@Indexed(unique = true)` is silently unenforced. Both `OrderEventListener` and
+`DeliveryEventListener` treat a losing concurrent write's `DuplicateKeyException` as "already
+processed, skip" — the database's own uniqueness constraint is the real guarantee; the
+`findByEventId` check that runs first in each is kept purely as a fast-path optimization to skip an
+unnecessary write on the common (non-concurrent) redelivery case, not relied on for correctness.
 
 ## Depends on / depended on by
 - **Depends on:** `discovery-server` (Eureka client registration — verified live), its own
@@ -91,12 +100,13 @@ redelivery case, not relied on for correctness.
   event consumer and a query API for its own audit data.
 
 ## Delivered in
-Sprint 5 — "Delivery, events, and notifications" (SPRINTS.md), the notification half only —
-`delivery-service` and `DeliveryStatusUpdatedEvent` consumption remain not built. Exit criteria met
-for this half: a real order placement and cancellation, through a real running `order-service`,
-each produced exactly one notification record, visible via `GET /api/notifications/me` within
-about two seconds. 5 Testcontainers-backed tests (MongoDB + RabbitMQ) all pass, including one that
-deliberately redelivers the same event twice and asserts exactly one record results.
+Sprint 5 — "Delivery, events, and notifications" (SPRINTS.md), now complete for this service: both
+`order-service`'s and `delivery-service`'s events are consumed. Exit criteria met and verified live:
+a real order placement and cancellation each produced exactly one notification record; a real
+delivery claim/pickup/deliver lifecycle produced three more, all visible via
+`GET /api/notifications/me` for the same order within seconds. 7 Testcontainers-backed tests
+(MongoDB + RabbitMQ) all pass, including two that deliberately redeliver the same event twice and
+assert exactly one record results (one per event type).
 
 ## Related
 - RULES.md §2 (Service inventory), §5 (Data ownership), §6 (Communication rules), §9 factor 9
@@ -104,6 +114,6 @@ deliberately redelivers the same event twice and asserts exactly one record resu
 - SPRINTS.md — Sprint 5
 - [`./order-service.md`](./order-service.md) — publishes `OrderPlacedEvent`/`OrderCancelledEvent`,
   consumed by this service
-- [`./delivery-service.md`](./delivery-service.md) — will publish `DeliveryStatusUpdatedEvent`,
-  a planned but not-yet-consumed event, once built
+- [`./delivery-service.md`](./delivery-service.md) — publishes `DeliveryStatusUpdatedEvent`,
+  consumed by this service
 - [`../technologies/mongodb.md`](../technologies/mongodb.md), [`../technologies/rabbitmq.md`](../technologies/rabbitmq.md)

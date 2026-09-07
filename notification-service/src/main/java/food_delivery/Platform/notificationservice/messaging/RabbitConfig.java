@@ -30,6 +30,11 @@ public class RabbitConfig {
 	private static final String DLQ = "notification-service.order-events.dlq";
 	private static final String DLQ_ROUTING_KEY = "dlq";
 
+	private static final String DELIVERY_EVENTS_EXCHANGE = "fdp.delivery-events";
+	private static final String DELIVERY_QUEUE = "notification-service.delivery-events";
+	private static final String DELIVERY_DLQ = "notification-service.delivery-events.dlq";
+	private static final String DELIVERY_DLQ_ROUTING_KEY = "delivery-dlq";
+
 	@Bean
 	public TopicExchange orderEventsExchange() {
 		return new TopicExchange(ORDER_EVENTS_EXCHANGE, true, false);
@@ -71,6 +76,50 @@ public class RabbitConfig {
 	@Bean
 	public Binding orderEventsBinding(Queue orderEventsQueue, TopicExchange orderEventsExchange) {
 		return BindingBuilder.bind(orderEventsQueue).to(orderEventsExchange).with("order.#");
+	}
+
+	/**
+	 * {@code delivery-service} owns {@code fdp.delivery-events} the same way {@code order-service}
+	 * owns {@code fdp.order-events} — re-declared here idempotently for the same reason (this
+	 * service may start before {@code delivery-service} does). A second, entirely separate DLX/DLQ
+	 * pair, not the order-events one: RULES.md §6's "every consumer owns its own queue and DLQ"
+	 * means every *source* queue gets its own dead-letter queue too, so a poisoned delivery event
+	 * can never block or get confused with the order-events queue's own DLQ.
+	 */
+	@Bean
+	public TopicExchange deliveryEventsExchange() {
+		return new TopicExchange(DELIVERY_EVENTS_EXCHANGE, true, false);
+	}
+
+	@Bean
+	public DirectExchange notificationDeliveryDeadLetterExchange() {
+		return new DirectExchange(DLX + ".delivery", true, false);
+	}
+
+	@Bean
+	public Queue notificationDeliveryDeadLetterQueue() {
+		return new Queue(DELIVERY_DLQ, true);
+	}
+
+	@Bean
+	public Binding notificationDeliveryDeadLetterBinding(Queue notificationDeliveryDeadLetterQueue,
+			DirectExchange notificationDeliveryDeadLetterExchange) {
+		return BindingBuilder.bind(notificationDeliveryDeadLetterQueue).to(notificationDeliveryDeadLetterExchange)
+				.with(DELIVERY_DLQ_ROUTING_KEY);
+	}
+
+	@Bean
+	public Queue deliveryEventsQueue() {
+		return QueueBuilder.durable(DELIVERY_QUEUE)
+				.withArguments(Map.of(
+						"x-dead-letter-exchange", DLX + ".delivery",
+						"x-dead-letter-routing-key", DELIVERY_DLQ_ROUTING_KEY))
+				.build();
+	}
+
+	@Bean
+	public Binding deliveryEventsBinding(Queue deliveryEventsQueue, TopicExchange deliveryEventsExchange) {
+		return BindingBuilder.bind(deliveryEventsQueue).to(deliveryEventsExchange).with("delivery.#");
 	}
 
 	/**

@@ -70,19 +70,18 @@ A Postman collection covering every row above, plus the resilience/async demos, 
   came back). **Not yet wired:** `config-server` integration — same documented scope cut as
   `customer-`/`restaurant-service`.
 - **Depended on by:** `notification-service` consumes `OrderPlacedEvent`/`OrderCancelledEvent` to
-  persist notification/audit records — done and verified live (see
-  `docs/services/notification-service.md`). `delivery-service` will consume `OrderPlacedEvent` to
-  auto-create delivery assignments (Sprint 5, not built yet). `api-gateway` will route
-  `/api/orders/**` to it (Sprint 4).
+  persist notification/audit records, and `delivery-service` consumes the same events to
+  auto-create/cancel delivery assignments — both done and verified live (see
+  `docs/services/notification-service.md`, `docs/services/delivery-service.md`). `api-gateway` will
+  route `/api/orders/**` to it (Sprint 4, not built yet).
 
 ## Delivered in
 Sprint 3 — "Order service & synchronous inter-service calls" (SPRINTS.md): the service itself and
 its synchronous Feign calls to `customer-service`/`restaurant-service`, done. The *publishing* half
 of Sprint 5's `OrderPlacedEvent`/`OrderCancelledEvent` work was pulled forward into this same
 build, since it's the natural pairing with order-service's own sync calls and directly demonstrates
-RULES.md §6's async communication rules. The *consuming* side has since landed too:
-`notification-service` (Sprint 5) is done and verified live; `delivery-service` (Sprint 5) remains
-not built.
+RULES.md §6's async communication rules. The *consuming* side has since landed too, completing
+Sprint 5: `notification-service` and `delivery-service` are both done and verified live.
 
 ## Related
 - RULES.md §2 (Service inventory), §5 (Data ownership), §6 (Communication rules), §7 (Resilience)
@@ -91,5 +90,4 @@ not built.
   validation
 - [`./notification-service.md`](./notification-service.md) — consumes this service's published
   events
-- [`./delivery-service.md`](./delivery-service.md) — will consume this service's published events
-  once built
+- [`./delivery-service.md`](./delivery-service.md) — consumes this service's published events

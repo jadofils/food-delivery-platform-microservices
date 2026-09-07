@@ -21,14 +21,14 @@ request and seeing the latency breakdown across every hop it took.
 
 | Service/module | Role | Sprint | Status |
 |---|---|---|---|
-| `customer-service`, `restaurant-service`, `order-service`, `notification-service` | Emit spans via Micrometer Tracing (Brave), report to Zipkin | Sprint 6 (pulled forward) | Done, verified live |
-| `api-gateway`, `delivery-service` | Same, once built | Sprint 6 | Not built yet |
+| `customer-service`, `restaurant-service`, `order-service`, `delivery-service`, `notification-service` | Emit spans via Micrometer Tracing (Brave), report to Zipkin | Sprint 6 (pulled forward) | Done, verified live |
+| `api-gateway` | Same, once built | Sprint 6 | Not built yet |
 
 Sprint 6 exit criteria (SPRINTS.md): "a single order can be traced end-to-end in Zipkin across all
-five services it touches." Met for the four services that exist today — a real order placement
-produces one trace across `order-service`, `customer-service`, `restaurant-service`, and
-`notification-service` (via the RabbitMQ hop). `delivery-service`/`api-gateway` aren't built yet,
-so they can't participate.
+five services it touches." **Met** — a real order placement produces one trace across all five
+domain services that exist today (`order-service`, `customer-service`, `restaurant-service`,
+`delivery-service`, `notification-service`), via both the Feign hops and the RabbitMQ hop.
+`api-gateway` isn't built yet, so it can't participate.
 
 ## How it's implemented in FDP
 - Dependency: `org.springframework.boot:spring-boot-starter-zipkin` on every service (**not**
@@ -37,11 +37,11 @@ so they can't participate.
   (`order-service`), per RULES.md §13.
 - Config keys: `management.tracing.sampling.probability` and
   `management.zipkin.tracing.endpoint` on every service; `spring.rabbitmq.template.observation-enabled`
-  (publish side, `order-service`) and `spring.rabbitmq.listener.simple.observation-enabled` (consume
-  side, `notification-service`) for the RabbitMQ hop specifically. Hardcoded to `localhost`
-  per-service today, matching every other service's not-yet-wired `config-server` scope cut — not
-  yet sourced through `config-server` (RULES.md §1 factor 3 is a documented gap here, same as
-  elsewhere).
+  (publish side — `order-service`, and `delivery-service` since it both publishes and consumes) and
+  `spring.rabbitmq.listener.simple.observation-enabled` (consume side — `notification-service`, and
+  `delivery-service`) for the RabbitMQ hops specifically. Hardcoded to `localhost` per-service
+  today, matching every other service's not-yet-wired `config-server` scope cut — not yet sourced
+  through `config-server` (RULES.md §1 factor 3 is a documented gap here, same as elsewhere).
 - No manual span creation is required for the standard flow: Micrometer Tracing auto-instruments
   Spring MVC request handling, OpenFeign calls (once `feign-micrometer` is present), and RabbitMQ
   publish/listen hops (once `observation-enabled` is set) — RULES.md §13. Two non-obvious
@@ -55,18 +55,20 @@ so they can't participate.
 ## Getting started
 
 **Status today:** Live and in real use — the tracing half of Sprint 6, pulled forward the same way
-order-service's async publish was pulled forward into Sprint 3. All four built services
-(`customer-service`, `restaurant-service`, `order-service`, `notification-service`) report real
-spans. Verified live: placing a real order produces **one trace spanning all five hops** —
-`order-service`'s own HTTP handling, its Feign calls into `customer-service` and
-`restaurant-service`, the RabbitMQ publish, and `notification-service`'s consumption of that
-message — confirmed both via `GET /api/v2/trace/{traceId}` (a single `traceId` shared across every
-span) and Zipkin's own dependency graph:
+order-service's async publish was pulled forward into Sprint 3, and extended to `delivery-service`
+the same day it was built. All five domain services
+(`customer-service`, `restaurant-service`, `order-service`, `delivery-service`,
+`notification-service`) report real spans. Verified live: placing a real order produces **one
+trace spanning every hop** — `order-service`'s own HTTP handling, its Feign calls into
+`customer-service` and `restaurant-service`, the RabbitMQ publish, `delivery-service`'s consumption
+of that message (auto-creating a delivery assignment), and `notification-service`'s consumption of
+the same message — confirmed via `GET /api/v2/trace/{traceId}` showing a single `traceId` shared
+across every span, including `restaurant-service`'s own Redis cache lookup:
 ```
 order-service -> customer-service
-order-service -> restaurant-service
-order-service -> rabbitmq
-rabbitmq -> notification-service
+order-service -> restaurant-service -> redis
+order-service -> rabbitmq -> delivery-service
+order-service -> rabbitmq -> notification-service
 ```
 Also confirmed: a client-facing error response's `traceId` field (previously always `null` — a
 real, user-reported gap) is now a real, directly-lookup-able Zipkin trace ID.
@@ -109,17 +111,18 @@ trail (that's `notification-service`'s job, over MongoDB, for actual domain even
 | Endpoint | Purpose | Status |
 |---|---|---|
 | `GET /` | Zipkin dashboard (HTML) | Live |
-| `GET /api/v2/services` | List every service that has reported a span | Live, verified — returns all four built services |
+| `GET /api/v2/services` | List every service that has reported a span | Live, verified — returns all five domain services |
 | `GET /api/v2/traces?serviceName=...` | Query traces matching search criteria | Live, verified |
-| `GET /api/v2/trace/{traceId}` | Fetch a single trace by ID | Live, verified — confirmed one trace spans all five hops of a real order placement |
+| `GET /api/v2/trace/{traceId}` | Fetch a single trace by ID | Live, verified — confirmed one trace spans every hop of a real order placement, across all five domain services plus RabbitMQ plus Redis |
 | `GET /api/v2/dependencies` | Aggregate service-to-service call graph derived from recent traces | Live, verified — matches the real architecture exactly |
 | `GET /health` | Liveness/readiness | Live |
 | `POST /api/v2/spans` | Span ingestion (called by reporting services, not by hand) | Live |
 
 ### Installation & dependencies
 - Docker image: `openzipkin/zipkin:3` (pinned in `docker-compose.yml`).
-- Every built service (`customer-service`, `restaurant-service`, `order-service`,
-  `notification-service`) declares `org.springframework.boot:spring-boot-starter-zipkin` — **not**
+- Every domain service (`customer-service`, `restaurant-service`, `order-service`,
+  `delivery-service`, `notification-service`) declares
+  `org.springframework.boot:spring-boot-starter-zipkin` — **not**
   `micrometer-tracing-bridge-brave`/`zipkin-reporter-brave` directly (see the gotcha above). Version
   managed by Boot's own parent BOM (RULES.md §4).
 - `order-service` additionally declares `io.github.openfeign:feign-micrometer` — without it, an
@@ -129,18 +132,19 @@ trail (that's `notification-service`'s job, over MongoDB, for actual domain even
 - Config: `management.tracing.sampling.probability=1.0` (trace everything — a deliberate
   local-dev-only choice, RULES.md §1 factor 3 would want a sampled fraction in production) and
   `management.zipkin.tracing.endpoint=http://localhost:9411/api/v2/spans` on every service;
-  `order-service` additionally sets `spring.rabbitmq.template.observation-enabled=true` (publish
-  side) and `notification-service` sets `spring.rabbitmq.listener.simple.observation-enabled=true`
-  (consume side) — both required for the RabbitMQ hop to join the trace rather than starting a new
-  one, verified by inspecting `RabbitProperties.Template`/`RabbitProperties.BaseContainer` directly
-  (`javap`) before writing the property names down.
+  `order-service` and `delivery-service` set `spring.rabbitmq.template.observation-enabled=true`
+  (publish side) and `notification-service`/`delivery-service` set
+  `spring.rabbitmq.listener.simple.observation-enabled=true` (consume side; `delivery-service` does
+  both, since it's a consumer and a publisher) — required for each RabbitMQ hop to join the trace
+  rather than starting a new one, verified by inspecting `RabbitProperties.Template`/
+  `RabbitProperties.BaseContainer` directly (`javap`) before writing the property names down.
 
 ### For newcomers
-Run `docker compose up -d zipkin`, start the four built services, place a real order (see
+Run `docker compose up -d zipkin`, start all five domain services, place a real order (see
 `docs/services/order-service.md` or any checked-in Postman collection), then open
 `http://localhost:9411`, search for `order-service`, and open the most recent trace for
-`http post /api/orders/me` — one trace, five services, latency broken down per hop. `GET
-/api/v2/dependencies` gives the same story as a call graph instead of a timeline. See
+`http post /api/orders/me` — one trace, five services plus RabbitMQ plus Redis, latency broken down
+per hop. `GET /api/v2/dependencies` gives the same story as a call graph instead of a timeline. See
 `./resilience4j.md` and `./rabbitmq.md` for the sync/async mechanics this trace is actually showing
 you the shape of.
 
