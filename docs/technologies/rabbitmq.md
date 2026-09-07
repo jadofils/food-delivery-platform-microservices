@@ -20,11 +20,11 @@ per-queue dead-lettering, and at-least-once delivery guarantees.
 
 ## Where it's used
 
-| Service | Role | Sprint |
-|---|---|---|
-| `order-service` | Publishes `OrderPlacedEvent`, `OrderCancelledEvent` to a topic exchange | Sprint 5 |
-| `delivery-service` | Consumes `OrderPlacedEvent`, publishes `DeliveryStatusUpdatedEvent` | Sprint 5 |
-| `notification-service` | Consumes domain events, persists notification/audit record | Sprint 5 |
+| Service | Role | Sprint | Status |
+|---|---|---|---|
+| `order-service` | Publishes `OrderPlacedEvent`, `OrderCancelledEvent` to a topic exchange | Sprint 3 (pulled forward) | Done, verified live |
+| `notification-service` | Consumes domain events, persists notification/audit record | Sprint 5 | Done, verified live |
+| `delivery-service` | Consumes `OrderPlacedEvent`, publishes `DeliveryStatusUpdatedEvent` | Sprint 5 | Not built |
 
 RabbitMQ itself is stood up as infrastructure in `docker-compose.yml` from Sprint 0 (skeleton
 containers only, RULES.md §10, SPRINTS.md Sprint 0); it is not wired into any service's messaging
@@ -56,13 +56,16 @@ logic until Sprint 5.
 
 ## Getting started
 
-**Status today:** Live and in real use — `order-service` (Sprint 3, pulled forward from Sprint 5's
-publishing half) publishes real `OrderPlacedEvent`/`OrderCancelledEvent` messages to a durable
-`fdp.order-events` topic exchange on every order placement/cancellation, confirmed by reading them
-back via RabbitMQ's management API. `delivery-service`/`notification-service` (Sprint 5) don't
-exist yet, so nothing *consumes* these for real — a temporary `order-events.inspection` queue
-(bound to `order.*`) keeps published events visible in the meantime instead of letting them be
-silently dropped by the topic exchange.
+**Status today:** Live and in real use on both sides. `order-service` (Sprint 3, pulled forward
+from Sprint 5's publishing half) publishes real `OrderPlacedEvent`/`OrderCancelledEvent` messages
+to a durable `fdp.order-events` topic exchange on every order placement/cancellation.
+`notification-service` (Sprint 5) consumes them for real off its own queue
+(`notification-service.order-events`, with its own DLQ) and persists a notification record in
+MongoDB — verified live end to end: a real order placement/cancellation through a real
+`order-service` produced exactly one notification record each, visible through
+`notification-service`'s own API within about two seconds. `delivery-service` (Sprint 5) doesn't
+exist yet. The temporary `order-events.inspection` queue (bound to `order.*`) from Sprint 3 is left
+in place alongside the real consumer, purely for convenient manual inspection.
 
 ### How to start it
 From the repo root:
@@ -92,9 +95,10 @@ included) with the default credentials below. The exchange/queue/binding are dec
 ### Endpoints it exposes
 | Endpoint | Purpose | Status |
 |---|---|---|
-| AMQP `5672` | Publish/consume protocol | Live, in real use by `order-service` |
+| AMQP `5672` | Publish/consume protocol | Live, in real use by `order-service` (publish) and `notification-service` (consume) |
 | `GET /api/overview` (management HTTP API, port `15672`) | Broker overview, stock RabbitMQ management plugin | Live |
-| `GET /api/queues/%2f/order-events.inspection` | This queue's current depth/stats | Live, verified |
+| `GET /api/queues/%2f/order-events.inspection` | Inspection queue's current depth/stats | Live, verified |
+| `GET /api/queues/%2f/notification-service.order-events` | Real consumer queue's current depth/stats | Live, verified |
 | `http://localhost:15672` | Management UI (HTML) | Live |
 
 These are stock RabbitMQ endpoints, not FDP-specific — no service exposes its own API through
@@ -102,8 +106,8 @@ RabbitMQ; it's a broker in between, not a service being called.
 
 ### Installation & dependencies
 - Docker image: `rabbitmq:4-management-alpine` (pinned in `docker-compose.yml`).
-- `order-service/pom.xml` declares `spring-boot-starter-amqp` — `delivery-service`/
-  `notification-service` will do the same once built (Sprint 5), not present in their POMs today.
+- `order-service/pom.xml` and `notification-service/pom.xml` both declare
+  `spring-boot-starter-amqp` — `delivery-service` will do the same once built (Sprint 5).
 - One real gotcha worth flagging: Spring AMQP 4.1 ships **two** JSON message converters —
   `JacksonJsonMessageConverter` (uses `tools.jackson`, Jackson 3 — what Boot 4's own `ObjectMapper`
   actually is) and the legacy `Jackson2JsonMessageConverter` (`com.fasterxml.jackson`, Jackson 2).
@@ -113,16 +117,16 @@ RabbitMQ; it's a broker in between, not a service being called.
   UI is served by the container itself, no separate client needed.
 
 ### For newcomers
-Run `docker compose up -d rabbitmq`, start `order-service`, then place an order (see
-`docs/services/order-service.md` or the checked-in Postman collection). Open
+Run `docker compose up -d rabbitmq`, start `order-service` and `notification-service`, then place
+an order (see `docs/services/order-service.md` or the checked-in Postman collection). Open
 `http://localhost:15672`, log in with `fdp`/`fdp`, go to **Queues → order-events.inspection → Get
-messages** — a real `OrderPlacedEvent` JSON payload is sitting there, `__TypeId__` header and all.
-That queue is temporary scaffolding, not the final architecture: `delivery-service`/
-`notification-service` (Sprint 5) will each declare their own real queue with its own DLQ, matching
-RULES.md §6's "every consumer queue has a dead-letter queue" — this one exists purely so publishing
-is visible before any real consumer does. See `./resilience4j.md` for how the *synchronous* half
-of `order-service`'s calls degrades gracefully; this queue is the *asynchronous* half's proof of
-life.
+messages** — a real `OrderPlacedEvent` JSON payload is sitting there, `__TypeId__` header and all
+— or check `notification-service.order-events`, which will show it's already been consumed (depth
+back to 0), then confirm the resulting record via `GET /api/notifications/me` on
+`notification-service` itself. `delivery-service` (Sprint 5) will declare its own real queue with
+its own DLQ the same way, once built, matching RULES.md §6's "every consumer queue has a
+dead-letter queue." See `./resilience4j.md` for how the *synchronous* half of `order-service`'s
+calls degrades gracefully; this queue pair is the *asynchronous* half's proof of life.
 
 ## Related
 - `RULES.md §6` (communication rules), `RULES.md §1` factor 9 (disposability/idempotency),

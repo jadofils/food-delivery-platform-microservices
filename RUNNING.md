@@ -17,8 +17,8 @@ cover that.
 | Component | Kind | Container / process name | Port | Status |
 |---|---|---|---|---|
 | `postgres` | Docker | `fdp-postgres` | 5432 | Infra — live |
-| `mongodb` | Docker | `fdp-mongodb` | 27017 | Infra — live, unused by any service yet |
-| `rabbitmq` | Docker | `fdp-rabbitmq` | 5672 (AMQP), 15672 (mgmt UI) | Infra — live, in real use by `order-service` |
+| `mongodb` | Docker | `fdp-mongodb` | 27017 | Infra — live, in real use by `notification-service` |
+| `rabbitmq` | Docker | `fdp-rabbitmq` | 5672 (AMQP), 15672 (mgmt UI) | Infra — live, in real use by `order-service` (publish) and `notification-service` (consume) |
 | `redis` | Docker | `fdp-redis` | 6379 | Infra — live, unused by any service yet |
 | `keycloak` | Docker | `fdp-keycloak` | 8180 | Infra — live, identity provider |
 | `config-server` | Maven (`spring-boot:run`) | `config-server` | 8888 | **Implemented** |
@@ -26,9 +26,9 @@ cover that.
 | `customer-service` | Maven | `customer-service` | 8082 | **Implemented** (needs `postgres` + `keycloak`) |
 | `restaurant-service` | Maven | `restaurant-service` | 8083 | **Implemented** (needs `postgres` + `keycloak`) |
 | `order-service` | Maven | `order-service` | 8084 | **Implemented** (needs `postgres`, `keycloak`, `rabbitmq`, `discovery-server`, `customer-service`, `restaurant-service`) |
+| `notification-service` | Maven | `notification-service` | 8086 | **Implemented** (needs `mongodb`, `keycloak`, `rabbitmq`, `discovery-server`; place an order via `order-service` to generate data) |
 | `api-gateway` | Maven | `api-gateway` | 8080 | Skeleton — boots, no routes yet |
 | `delivery-service` | Maven | `delivery-service` | 8085 | Skeleton |
-| `notification-service` | Maven | `notification-service` | 8086 | Skeleton |
 | `common` | — | — | — | Shared library, not a runnable service |
 
 "Skeleton" services start fine (`spring-boot:run` boots successfully) but have no business
@@ -194,6 +194,7 @@ nothing to browse there beyond what's listed below instead.
 | `customer-service` | http://localhost:8082/swagger-ui/index.html | http://localhost:8082/v3/api-docs | No — the docs page itself is `permitAll()`; you only need a token to click **Try it out** on an endpoint |
 | `restaurant-service` | http://localhost:8083/swagger-ui/index.html | http://localhost:8083/v3/api-docs | No, same as above |
 | `order-service` | http://localhost:8084/swagger-ui/index.html | http://localhost:8084/v3/api-docs | No, same as above |
+| `notification-service` | http://localhost:8086/swagger-ui/index.html | http://localhost:8086/v3/api-docs | No, same as above |
 | `discovery-server` | — (no Swagger) | — | Eureka's own dashboard instead: http://localhost:8761 |
 | `config-server` | — (no Swagger) | — | It's a config-serving REST API, not a documented business API — see `curl` examples in `docs/services/config-server.md` |
 
@@ -229,16 +230,19 @@ in `credentials.md` — not repeated here to avoid the two files drifting apart.
 
 ### "I want to test the full order flow end to end (e.g. in Postman)"
 ```bash
-docker compose up -d                                    # postgres, keycloak, rabbitmq (+ the rest)
+docker compose up -d                                    # postgres, mongodb, keycloak, rabbitmq (+ the rest)
 ./mvnw -pl discovery-server -am spring-boot:run          # terminal 1 -- order-service needs Eureka
 ./mvnw -pl customer-service -am spring-boot:run          # terminal 2
 ./mvnw -pl restaurant-service -am spring-boot:run        # terminal 3
 ./mvnw -pl order-service -am spring-boot:run             # terminal 4 -- calls both of the above
+./mvnw -pl notification-service -am spring-boot:run      # terminal 5 -- consumes order-service's events
 ```
-Then import all three collections (`FDP-customer-service`, `FDP-restaurant-service`,
-`FDP-order-service`) plus `FDP.postman_environment.json`, select the environment, and run each
-collection's own token/setup folders first — or just run `FDP-order-service`'s collection alone,
-its own "2. Prerequisite Setup" folder registers everything it needs.
+Then import all four collections (`FDP-customer-service`, `FDP-restaurant-service`,
+`FDP-order-service`, `FDP-notification-service`) plus `FDP.postman_environment.json`, select the
+environment, and run each collection's own token/setup folders first — or just run
+`FDP-notification-service`'s collection alone, its own "2. Prerequisite Setup" folder registers
+everything it needs and its "3. Trigger Events via Order Placement" folder places a real order
+through `order-service` on your behalf.
 
 ### "I want everything currently implemented running together"
 ```bash
@@ -250,9 +254,10 @@ sleep 6
 (java -jar customer-service/target/customer-service-0.0.1-SNAPSHOT.jar  > /tmp/customer-service.log    2>&1 &)
 (java -jar restaurant-service/target/restaurant-service-0.0.1-SNAPSHOT.jar > /tmp/restaurant-service.log 2>&1 &)
 (java -jar order-service/target/order-service-0.0.1-SNAPSHOT.jar        > /tmp/order-service.log       2>&1 &)
+(java -jar notification-service/target/notification-service-0.0.1-SNAPSHOT.jar > /tmp/notification-service.log 2>&1 &)
 ```
-(`api-gateway`/`delivery-service`/`notification-service` can be started the same way, but they're
-skeletons today — nothing to exercise on them yet.)
+(`api-gateway`/`delivery-service` can be started the same way, but they're skeletons today —
+nothing to exercise on them yet.)
 
 ### "I want to see the resilience/circuit-breaker story for myself"
 ```bash
@@ -268,6 +273,16 @@ taskkill //F //PID <pid>                         # stop it
 Place an order via Postman/curl, then open `http://localhost:15672` (login `fdp`/`fdp`) → **Queues
 → order-events.inspection → Get messages** — a real `OrderPlacedEvent` JSON payload is sitting
 there.
+
+### "I want to see the async event consume + MongoDB story for myself"
+With `notification-service` also running, place (and optionally cancel) an order via Postman/curl,
+then call `GET http://localhost:8086/api/notifications/me` with the same customer's token — a real
+notification record is there within a couple of seconds, persisted in MongoDB's `notification_db`
+(`mongosh "mongodb://fdp:fdp@localhost:27017/notification_db?authSource=admin"` →
+`db.notifications.find()` to see it directly). To see the idempotency guard hold up, publish the
+exact same event twice from RabbitMQ's management UI (**Queues →
+notification-service.order-events**, re-publish a message you already got via Get Messages) —
+exactly one notification results, not two.
 
 ### "I only need the databases/broker up, no application code running"
 ```bash
@@ -301,4 +316,4 @@ That's it — no FDP service needs to be running for this.
 - `docs/SPRINTS.md` (what's actually built vs. still planned)
 - `credentials.md` (seeded Keycloak demo accounts)
 - `postman/` (collections + shared environment for exercising `customer-service`,
-  `restaurant-service`, and `order-service`)
+  `restaurant-service`, `order-service`, and `notification-service`)

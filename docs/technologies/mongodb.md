@@ -21,9 +21,10 @@ MongoDB is a document-oriented NoSQL database. In FDP it is the sole datastore f
 |---|---|---|
 | `notification-service` | `notification_db` | Sprint 5 |
 
-Sprint 5 is also when `notification-service` starts consuming domain events (`OrderPlacedEvent`,
-`DeliveryStatusUpdatedEvent`, etc.) over RabbitMQ and persisting the resulting audit record
-(SPRINTS.md, Sprint 5).
+Sprint 5 is also when `notification-service` starts consuming domain events over RabbitMQ and
+persisting the resulting audit record — done for `OrderPlacedEvent`/`OrderCancelledEvent`
+(SPRINTS.md, Sprint 5); `DeliveryStatusUpdatedEvent` remains unconsumed since `delivery-service`
+doesn't exist yet.
 
 ## How it's implemented in FDP
 - `notification-service` declares `spring-boot-starter-data-mongodb` in its own `pom.xml`
@@ -40,12 +41,18 @@ Sprint 5 is also when `notification-service` starts consuming domain events (`Or
 
 ## Getting started
 
-**Status today:** The container is live (part of the Sprint 1 `docker-compose.yml` additions) —
-but nothing uses it yet. `notification-service` is still a bare skeleton (`spring-boot-starter` +
-`spring-boot-starter-test` only, per its own `pom.xml`), with no `spring-boot-starter-data-mongodb`,
-no Mongo connection config, and no collections defined. There's no init script creating
-`notification_db` yet either — that's Sprint 5 work alongside `notification-service` itself
-(SPRINTS.md, Sprint 5). This is planned — Sprint 5, not yet implemented.
+**Status today:** Live and in real use. `notification-service` declares
+`spring-boot-starter-data-mongodb`, connects to `notification_db`, and its RabbitMQ consumer
+(`OrderEventListener`) persists a real `NotificationRecord` document on every
+`OrderPlacedEvent`/`OrderCancelledEvent` it processes. Verified live: a real order placement and
+cancellation, through a real running `order-service`, each produced exactly one document, visible
+via `notification-service`'s own `GET /api/notifications/me`.
+
+One gotcha worth knowing before connecting manually: `docker-compose.yml`'s
+`MONGO_INITDB_ROOT_*` env vars create the root user in Mongo's **`admin`** authentication
+database, not in `notification_db` itself — so any connection string needs
+`?authSource=admin` even though the target database is `notification_db`. Omitting it produces an
+authentication failure that looks like a wrong password, not a hint about the auth database.
 
 ### How to start it
 From the repo root:
@@ -53,8 +60,10 @@ From the repo root:
 docker compose up -d mongodb
 ```
 This alone (no `.env` file needed) starts a single MongoDB 7 container with the default root
-credentials below. No init script runs against it yet — `notification_db` and its collections
-don't exist until `notification-service` is built (Sprint 5).
+credentials below. `notification_db` and its `notifications` collection are created lazily by
+`notification-service` itself on first write — there's no init script for Mongo, unlike Postgres's
+`docker/postgres/init-databases.sql` (Mongo has no equivalent multi-database bootstrap need here,
+since exactly one service uses it).
 
 ### How to access it
 - **Host/port:** `localhost:27017` (override via `MONGO_PORT` in a repo-root `.env` file — see
@@ -64,7 +73,7 @@ don't exist until `notification-service` is built (Sprint 5).
   development; production credentials come from environment injection (RULES.md §1 factor 3, §8).
 - **From the host machine**, with `mongosh` installed:
   ```
-  mongosh "mongodb://fdp:fdp@localhost:27017"
+  mongosh "mongodb://fdp:fdp@localhost:27017/notification_db?authSource=admin"
   ```
 - **From inside the Docker network** (i.e. from another container), `notification-service`'s own
   `application-docker.yml` will point at the Docker service hostname, not `localhost`:
@@ -74,23 +83,26 @@ don't exist until `notification-service` is built (Sprint 5).
 
 ### Endpoints it exposes
 Not applicable in the REST sense — MongoDB exposes the standard Mongo wire protocol on port
-`27017`, not HTTP. `notification-service` will expose its own REST API over this data once built
-(Sprint 5) — MongoDB itself never does.
+`27017`, not HTTP. `notification-service` exposes its own REST API over this data (see
+`docs/services/notification-service.md`) — MongoDB itself never does.
 
 ### Installation & dependencies
 - Docker image: `mongo:7` (pinned in `docker-compose.yml`).
-- `notification-service` will declare `spring-boot-starter-data-mongodb` in its own `pom.xml` once
-  built (RULES.md §4) — not present in its POM today.
+- `notification-service` declares `spring-boot-starter-data-mongodb` in its own `pom.xml`
+  (RULES.md §4), plus `spring.data.mongodb.auto-index-creation=true` — without that property,
+  `@Indexed(unique = true)` on `NotificationRecord.eventId` is never actually enforced by MongoDB
+  itself (see `docs/services/notification-service.md`'s "Idempotent consumption" section for the
+  real bug this was hiding).
 - No local tool install is required to *run* MongoDB (it's fully containerized); installing the
   `mongosh` CLI on the host is optional, only useful for manual inspection.
 
 ### For newcomers
-Run `docker compose up -d mongodb`, then connect with `mongosh "mongodb://fdp:fdp@localhost:27017"`
-to confirm it's up. There's nothing to query yet: no service has created a single collection, since
-`notification-service` doesn't exist until Sprint 5. This container being live and healthy is
-ahead-of-need infrastructure, not a sign anything domain-specific is running. See `./postgresql.md`
-for the platform's other datastore, and `./rabbitmq.md` for the events `notification-service` will
-eventually consume and persist here.
+Run `docker compose up -d mongodb`, then connect with
+`mongosh "mongodb://fdp:fdp@localhost:27017/notification_db?authSource=admin"` to confirm it's up
+and browse `db.notifications.find()` for real notification records once you've placed an order
+through `order-service` with `notification-service` also running. See `./postgresql.md` for the
+platform's other datastore, and `./rabbitmq.md` for the events `notification-service` consumes and
+persists here.
 
 ## Related
 - RULES.md §2, RULES.md §5, RULES.md §6, RULES.md §10

@@ -218,20 +218,34 @@ notification/audit trail.
 
 - RabbitMQ topic exchange(s) with DLQs per consumer queue.
 - `order-service` publishes `OrderPlacedEvent` / `OrderCancelledEvent` — **done early, in Sprint 3**
-  (see that sprint's notes), since it paired naturally with `order-service`'s own build. What
-  remains here is the *consuming* side: real consumer queues with DLQs replacing the temporary
-  `order-events.inspection` queue Sprint 3 left in place purely for local visibility.
-- `delivery-service` (`delivery_db`) consumes `OrderPlacedEvent`, auto-creates delivery
-  assignments, publishes `DeliveryStatusUpdatedEvent`. Consumer is idempotent.
+  (see that sprint's notes), since it paired naturally with `order-service`'s own build.
 - `notification-service` (`notification_db`, MongoDB) consumes domain events and persists the
   notification/audit record (who was notified, channel, status) — this is domain data, not
-  operational logging (`RULES.md` §5).
-- `api-gateway` route for `/api/deliveries/**` added.
+  operational logging (`RULES.md` §5). **Done and verified live:** `NotificationRecord` Mongo
+  document (`eventId` unique-indexed), `OrderEventListener` consuming `fdp.order-events` off its
+  own real queue + DLQ (`notification-service.order-events` / `.dlq`, `x-dead-letter-exchange`
+  wiring, no custom recovery code needed), `GET /api/notifications/me` (self-service,
+  authenticated-only) and `GET /api/notifications` (`notification:read`, admin-only). Idempotency
+  is genuinely enforced at the database level, not just an application-level check — see
+  `docs/services/notification-service.md`'s "Idempotent consumption" section for the real bug this
+  surfaced and how it was fixed. Exercised end to end against a real, running `order-service`: a
+  real order placement and cancellation each produced exactly one notification record, visible via
+  the REST API within about two seconds. 5 Testcontainers-backed tests (MongoDB + RabbitMQ) plus a
+  14-request Postman collection (`postman/FDP-notification-service.postman_collection.json`), both
+  green.
+- `delivery-service` (`delivery_db`) consumes `OrderPlacedEvent`, auto-creates delivery
+  assignments, publishes `DeliveryStatusUpdatedEvent`. Consumer is idempotent. **Not done.**
+- `api-gateway` route for `/api/deliveries/**` added. **Not done** (`api-gateway` itself doesn't
+  exist yet — Sprint 4 scope, not started).
 
 **Exit criteria:** placing an order produces a delivery record automatically with no synchronous
 call from `order-service` into `delivery-service`; a failed/poisoned message lands in the DLQ
 instead of blocking the queue; notification records are queryable via `notification-service`'s
-API.
+API. **Partially met:** the notification half is done and verified live (including the DLQ wiring,
+though a real poison-message-reaches-the-DLQ scenario hasn't been deliberately triggered end to
+end — the mechanism is config, not custom code, and is the same pattern already proven this way in
+Sprint 3). The delivery half (auto-created delivery records, `DeliveryStatusUpdatedEvent`) remains
+open.
 
 ---
 

@@ -52,9 +52,10 @@ only ever does what the caller who placed the order was already allowed to do.
 
 **Async publishing (RULES.md §6):** a durable `fdp.order-events` topic exchange, routing keys
 `order.placed`/`order.cancelled`. A temporary `order-events.inspection` queue (bound to `order.*`)
-makes published events visible via RabbitMQ's management UI
-(`http://localhost:15672`) before any real consumer exists — removed once `delivery-service`/
-`notification-service` (Sprint 5) declare their own real queues.
+makes published events visible via RabbitMQ's management UI (`http://localhost:15672`) even
+without a consumer running — left in place for local debugging even now that `notification-service`
+has its own real consumer queue (RULES.md §6: every consumer owns its own queue, never a shared
+one), since a shared inspection view is still useful for one-off manual checks.
 
 A Postman collection covering every row above, plus the resilience/async demos, is checked in at
 `postman/FDP-order-service.postman_collection.json`.
@@ -68,23 +69,27 @@ A Postman collection covering every row above, plus the resilience/async demos, 
   `restaurant-service` mid-flow, got a clean `503` in ~7s, confirmed automatic recovery once it
   came back). **Not yet wired:** `config-server` integration — same documented scope cut as
   `customer-`/`restaurant-service`.
-- **Depended on by:** `delivery-service` will consume `OrderPlacedEvent` to auto-create delivery
-  assignments; `notification-service` will consume `OrderPlacedEvent`/`OrderCancelledEvent` to
-  persist notification/audit records (both Sprint 5, not built yet — today their events land only
-  in the temporary inspection queue above). `api-gateway` will route `/api/orders/**` to it
-  (Sprint 4).
+- **Depended on by:** `notification-service` consumes `OrderPlacedEvent`/`OrderCancelledEvent` to
+  persist notification/audit records — done and verified live (see
+  `docs/services/notification-service.md`). `delivery-service` will consume `OrderPlacedEvent` to
+  auto-create delivery assignments (Sprint 5, not built yet). `api-gateway` will route
+  `/api/orders/**` to it (Sprint 4).
 
 ## Delivered in
 Sprint 3 — "Order service & synchronous inter-service calls" (SPRINTS.md): the service itself and
 its synchronous Feign calls to `customer-service`/`restaurant-service`, done. The *publishing* half
 of Sprint 5's `OrderPlacedEvent`/`OrderCancelledEvent` work was pulled forward into this same
 build, since it's the natural pairing with order-service's own sync calls and directly demonstrates
-RULES.md §6's async communication rules — the *consuming* half (`delivery-service`,
-`notification-service` actually reacting to these events) remains Sprint 5 work, not done.
+RULES.md §6's async communication rules. The *consuming* side has since landed too:
+`notification-service` (Sprint 5) is done and verified live; `delivery-service` (Sprint 5) remains
+not built.
 
 ## Related
 - RULES.md §2 (Service inventory), §5 (Data ownership), §6 (Communication rules), §7 (Resilience)
 - SPRINTS.md — Sprint 3, Sprint 5
 - [`./restaurant-service.md`](./restaurant-service.md) — synchronous dependency for menu/pricing
   validation
-- [`./delivery-service.md`](./delivery-service.md) — consumes this service's published events
+- [`./notification-service.md`](./notification-service.md) — consumes this service's published
+  events
+- [`./delivery-service.md`](./delivery-service.md) — will consume this service's published events
+  once built
