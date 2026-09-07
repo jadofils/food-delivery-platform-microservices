@@ -167,6 +167,33 @@ class RestaurantControllerIT extends AbstractIntegrationTest {
 				.andExpect(jsonPath("$.error").value("FORBIDDEN"));
 	}
 
+	/**
+	 * A genuine cache HIT, not just a population check — the first call is guaranteed to miss (a
+	 * freshly-registered restaurant can't already be cached), so the second call is the one that
+	 * actually exercises Redis's serialize-then-deserialize round-trip for
+	 * {@code RestaurantResponse}. This is deliberately not just "does the endpoint still return
+	 * 200" — a real bug here surfaced only on a genuine repeat call (see CacheConfig's own class
+	 * comment): the first attempt at making this endpoint cacheable embedded no type hint at all,
+	 * so a hit deserialized to a generic {@code LinkedHashMap} instead of {@code RestaurantResponse}
+	 * and threw a {@code ClassCastException} — invisible to any test that only ever calls an
+	 * endpoint once.
+	 */
+	@Test
+	void getById_isCachedAndSurvivesARepeatCall() throws Exception {
+		String createdId = registerAndReturnId("kc-owner-cache-hit");
+
+		mockMvc.perform(get("/api/restaurants/" + createdId).with(customer("kc-customer-cache-1")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.id").value(Long.valueOf(createdId)))
+				.andExpect(jsonPath("$.name").value("Kigali Grill"));
+
+		// Same id, second call -- this one is the cache hit.
+		mockMvc.perform(get("/api/restaurants/" + createdId).with(customer("kc-customer-cache-2")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.id").value(Long.valueOf(createdId)))
+				.andExpect(jsonPath("$.name").value("Kigali Grill"));
+	}
+
 	private String registerAndReturnId(String sub) throws Exception {
 		String body = mockMvc.perform(post("/api/restaurants/me")
 						.with(owner(sub))

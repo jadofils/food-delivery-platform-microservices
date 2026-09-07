@@ -46,36 +46,66 @@ creation.
 - **Caches the response DTO, not the JPA entity.** `RestaurantResponse`/`MenuItemResponse` aren't
   `Serializable`, and neither are the `Restaurant`/`MenuItem` entities — caching the entity directly
   would either throw (JDK serialization needs `Serializable`) or risk serializing an uninitialized
-  Hibernate lazy proxy (`MenuItem.restaurant`). `@Cacheable`/`@Cacheable`'s sibling annotations live
-  at the controller layer specifically so what's stored is the exact DTO shape already returned to
-  API clients — confirmed via the real `IllegalStateException`/`SerializationException` this
-  surfaced before the fix (see "Two real gotchas" below).
+  Hibernate lazy proxy (`MenuItem.restaurant`). `@Cacheable`/`@CacheEvict` live at the controller
+  layer specifically so what's stored is the exact DTO shape already returned to API clients.
+- Each cache uses a `Jackson2JsonRedisSerializer` bound to its own single, always-known value type
+  (`RestaurantResponse`, `List<MenuItemResponse>`) — not `GenericJackson2JsonRedisSerializer` with
+  default typing, which was tried first and broke in a way population/eviction checks alone never
+  caught (see "Real gotchas" below).
 - Redis connection details (host/port/password) come from `application.properties`; not yet sourced
   through `config-server` (same documented scope cut as every other service so far).
 
-### Two real gotchas surfaced getting this working
-- **`GenericJackson2JsonRedisSerializer`'s default value serializer requires `Serializable`.**
-  `RedisCacheConfiguration.defaultCacheConfig()`'s value serializer is plain JDK serialization —
-  confirmed empirically (`IllegalStateException: Cannot serialize value of type
-  RestaurantResponse without a serializer`). Fixed by explicitly configuring a JSON value
-  serializer (`GenericJackson2JsonRedisSerializer`) instead.
-- **That serializer is genuinely classic Jackson 2, not Jackson 3.** Spring Data Redis 4.1.1 hasn't
-  been updated for `tools.jackson` (Jackson 3, what this Boot 4.1 app otherwise uses everywhere
-  else) — `GenericJackson2JsonRedisSerializer` takes a `com.fasterxml.jackson.databind.ObjectMapper`
-  specifically. Its own default constructor has no JSR-310 module registered, so it couldn't
-  serialize `Instant` (confirmed: `SerializationException: Java 8 date/time type
-  'java.time.Instant' not supported`). Fixed with `new ObjectMapper().findAndRegisterModules()` —
-  `jackson-datatype-jsr310` (the Jackson 2 variant) is already on the classpath transitively via
-  Boot's own Jackson-2-compatibility layer (`spring-boot-jackson2`), so `findAndRegisterModules()`
-  picks it up via `ServiceLoader` without needing to reference the module class directly.
+### Real gotchas surfaced getting this working
+
+Two categories of bug here, found at two different points — the first round while first building
+this feature, the second only later, when restarting the service exercised a code path the first
+round of live-verification never actually triggered:
+
+- **`RedisCacheConfiguration.defaultCacheConfig()`'s value serializer is plain JDK serialization**,
+  which requires `Serializable` — confirmed empirically (`IllegalStateException: Cannot serialize
+  value of type RestaurantResponse without a serializer`). Needs an explicit JSON value serializer.
+- **`GenericJackson2JsonRedisSerializer` is genuinely classic Jackson 2, not Jackson 3.** Spring
+  Data Redis 4.1.1 hasn't been updated for `tools.jackson` (Jackson 3, what this Boot 4.1 app
+  otherwise uses everywhere else) — it takes a `com.fasterxml.jackson.databind.ObjectMapper`
+  specifically, and its default `ObjectMapper` has no JSR-310 module registered, so it couldn't
+  serialize `Instant` (confirmed: `SerializationException: Java 8 date/time type 'java.time.Instant'
+  not supported`). `new ObjectMapper().findAndRegisterModules()` picks up
+  `jackson-datatype-jsr310:2.x` off the classpath (pulled in transitively by Boot's own
+  Jackson-2-compatibility layer, `spring-boot-jackson2`) without needing to reference the module
+  class directly.
+- **A genuine bug that slipped past the first round of live verification entirely**, caught only
+  later when restarting the service exercised a real cache HIT for the first time (the original
+  verification pass checked population, TTL, and eviction, but never re-read a value back out — see
+  `docs/services/restaurant-service.md`'s "Distributed caching" section for why that gap mattered):
+  the constructor-based `new GenericJackson2JsonRedisSerializer(objectMapper)` embeds no type hint
+  in the stored JSON at all, so a cache hit deserialized to a generic `LinkedHashMap` instead of
+  `RestaurantResponse` — a `ClassCastException`, live, on a real `GET`.
+- **The next fix attempt (`GenericJackson2JsonRedisSerializer.builder().defaultTyping(true)`) fixed
+  the single-object cache but broke the list-valued one.** Jackson's default typing can't attach a
+  `@class` property to a bare JSON array, so the `List<MenuItemResponse>` value was written with no
+  type wrapper at all — and on read, Jackson's type-id resolver choked on the array's first element
+  (`MismatchedInputException: Unexpected token (START_OBJECT), expected VALUE_STRING`), a
+  well-known limitation of default typing with root-level collections.
+- **The actual fix:** since each cache's value type is always exactly one known type, no type hint
+  needs to be embedded in the JSON at all — a type-specific `Jackson2JsonRedisSerializer` per cache
+  (`new Jackson2JsonRedisSerializer<>(mapper, RestaurantResponse.class)` for one,
+  `new Jackson2JsonRedisSerializer<>(mapper, mapper.getTypeFactory()
+  .constructCollectionType(List.class, MenuItemResponse.class))` for the other) sidesteps the whole
+  problem, and needs no `PolymorphicTypeValidator` reasoning either, since nothing polymorphic is
+  happening. Locked in with two new tests
+  (`RestaurantControllerIT.getById_isCachedAndSurvivesARepeatCall`,
+  `MenuItemControllerIT.listForRestaurant_isCachedAndSurvivesARepeatCall`) that call the same
+  browsing endpoint twice and assert the second (cache-hit) call succeeds — the exact case the
+  original tests never covered.
 
 ## Getting started
 
-**Status today:** Live and in real use by `restaurant-service`. Verified live end to end: a `GET`
-populates the cache (confirmed via `redis-cli keys '*'` and `get`), a repeat `GET` is a cache hit,
-`redis-cli ttl` shows the entry counting down from two minutes, and each write path (restaurant
-profile update, menu item add/update/delete) evicts exactly the affected key — confirmed by
-checking `keys '*'` immediately after each write.
+**Status today:** Live and in real use by `restaurant-service`. Verified live end to end, including
+the cache-hit path specifically (not just population/eviction, which is what the earlier bug hid
+behind): a `GET` populates the cache (confirmed via `redis-cli keys '*'` and `get`), a repeat `GET`
+is a genuine cache hit returning correctly-typed data, `redis-cli ttl` shows the entry counting down
+from two minutes, and each write path (restaurant profile update, menu item add/update/delete)
+evicts exactly the affected key.
 
 ### How to start it
 From the repo root:

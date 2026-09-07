@@ -96,6 +96,34 @@ class MenuItemControllerIT extends AbstractIntegrationTest {
 				.andExpect(jsonPath("$[0].name").value("Brochette"));
 	}
 
+	/**
+	 * A genuine cache HIT for the {@code List<MenuItemResponse>} value, not just a population
+	 * check. This is the pair to {@code RestaurantControllerIT.getById_isCachedAndSurvivesARepeatCall}
+	 * — the two caches turned out to need genuinely different fixes (see CacheConfig's own class
+	 * comment): the list value specifically broke a generic-typed serializer that worked fine for a
+	 * single object, since Jackson's default typing can't attach a type hint to a bare JSON array.
+	 * Invisible to any test that only ever calls the browsing endpoint once.
+	 */
+	@Test
+	void listForRestaurant_isCachedAndSurvivesARepeatCall() throws Exception {
+		String sub = "kc-owner-menu-cache-hit";
+		String restaurantId = registerRestaurant(sub);
+		mockMvc.perform(post("/api/restaurants/me/menu-items")
+						.with(owner(sub))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(MENU_ITEM_JSON))
+				.andExpect(status().isCreated());
+
+		mockMvc.perform(get("/api/restaurants/" + restaurantId + "/menu-items").with(customer("kc-customer-cache-1")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].name").value("Brochette"));
+
+		// Same restaurant, second call -- this one is the cache hit.
+		mockMvc.perform(get("/api/restaurants/" + restaurantId + "/menu-items").with(customer("kc-customer-cache-2")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].name").value("Brochette"));
+	}
+
 	@Test
 	void anotherOwner_cannotSeeSomeoneElsesMenuItem() throws Exception {
 		String ownerA = "kc-owner-menu-a";

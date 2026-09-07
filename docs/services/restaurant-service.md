@@ -52,11 +52,22 @@ are each `@Cacheable` in Redis, namespaced `restaurant-service:restaurant`/`rest
 so this service can share one Redis instance with any future consumer without key collisions. Every
 entry carries a two-minute TTL (`CacheConfig`); every write path
 (`updateOwnProfile`/`addForOwner`/`updateForOwner`/`deleteForOwner`) evicts the affected entry
-immediately via `@CacheEvict` rather than waiting out the TTL. Verified live end to end: a `GET`
-populates the cache (confirmed via `redis-cli keys '*'`), a repeat `GET` is a cache hit, and each
-write path evicts exactly the one key it should — see `docs/technologies/redis.md` for the two
-Jackson-serialization gotchas this surfaced (caching happens at the DTO layer, not the JPA entity,
-for exactly that reason) and the full verification transcript.
+immediately via `@CacheEvict` rather than waiting out the TTL.
+
+A genuine bug shipped in the first pass here and wasn't caught until later: the original
+verification checked cache population (a key appears after a `GET`), TTL, and eviction-on-write —
+but never actually read a value back out of a real cache hit. Restarting the service days later
+finally exercised that path for the first time and threw a live `ClassCastException`
+(`GET /api/restaurants/{id}` a second time returned a generic `LinkedHashMap`, not
+`RestaurantResponse`) — the serializer embedded no type information, so deserialization had nothing
+to reconstruct the original type from. The fix that followed (Jackson default typing) then broke
+the *other* cache instead (`List<MenuItemResponse>` — Jackson can't type-tag a bare JSON array). The
+actual fix: a `Jackson2JsonRedisSerializer` bound to each cache's own single, always-known value
+type, needing no embedded type hint at all. Two new tests
+(`RestaurantControllerIT.getById_isCachedAndSurvivesARepeatCall`,
+`MenuItemControllerIT.listForRestaurant_isCachedAndSurvivesARepeatCall`) call the browsing endpoint
+twice and assert the second, cache-hit call succeeds — closing the exact gap the original tests
+left open. See `docs/technologies/redis.md`'s "Real gotchas" section for the full sequence.
 
 ## Depends on / depended on by
 - **Depends on:** `discovery-server` (Eureka client registration — registers on startup, verified
