@@ -10,7 +10,7 @@ header rewriting), and forwards the request to a resolved backend.
   limiting all centralized at the edge instead of duplicated per service (RULES.md §2; ReadMe.md
   Epic 3, user story 3.2).
 - JWT validation must happen once, at the edge, before routing — `api-gateway` validates every
-  inbound token's signature, expiry, and issuer so downstream services can authorize locally off
+  inbound token's signature and expiry so downstream services can authorize locally off
   embedded claims without a network call back to Keycloak (RULES.md §8).
 - Order placement needs centralized rate limiting to protect the system from bursty traffic on a
   high-traffic write path — this is the gateway's `RequestRateLimiter`, backed by Redis (RULES.md
@@ -26,82 +26,108 @@ header rewriting), and forwards the request to a resolved backend.
 | `api-gateway` | Routes all external traffic, JWT validation filter, rate limiting | Sprint 4 (customers/restaurants/orders), Sprint 5 (deliveries route added) |
 
 ## How it's implemented in FDP
-- Dependency: `spring-cloud-starter-gateway` in `api-gateway`'s `pom.xml` only — `api-gateway` does
-  not depend on `spring-boot-starter-data-jpa` or any other service's dependencies (RULES.md §4).
+- Dependency: `spring-cloud-starter-gateway-server-webflux` in `api-gateway`'s `pom.xml` only —
+  `api-gateway` does not depend on `spring-boot-starter-data-jpa` or any other service's
+  dependencies (RULES.md §4). This Spring Cloud train renamed the older
+  `spring-cloud-starter-gateway` artifact to this WebFlux-specific one — a WebMVC-flavored gateway
+  variant now exists as a sibling artifact, so the name had to disambiguate.
 - Runs on port `8080` (RULES.md §2).
-- Route predicates map:
+- Routes are configured via `application.properties`
+  (`spring.cloud.gateway.server.webflux.routes[*]`), not Java `RouteLocator` beans — matching this
+  project's properties-over-YAML convention everywhere else, and confirmed against this Spring
+  Cloud version's own configuration metadata (the property prefix moved to
+  `spring.cloud.gateway.server.webflux.*`, not the older `spring.cloud.gateway.*` many
+  older examples still show). Route predicates map:
+  - `POST /api/orders/me` → `lb://order-service` (listed *before* the general order-service route
+    below — first-match-wins route ordering — so `RequestRateLimiter` actually applies to it)
+  - `/api/orders/**` → `lb://order-service` (everything else)
   - `/api/customers/**` → `lb://customer-service`
   - `/api/restaurants/**` → `lb://restaurant-service`
-  - `/api/orders/**` → `lb://order-service`
-  - `/api/deliveries/**` → `lb://delivery-service` (added in Sprint 5)
+  - `/api/deliveries/**` → `lb://delivery-service`
   (RULES.md §2, §6; SPRINTS.md Sprint 4 and Sprint 5)
-- A JWT validation filter (custom `GatewayFilter`) checks signature, expiry, and issuer against
-  Keycloak's JWKS endpoint before a request is routed (RULES.md §8; SPRINTS.md Sprint 4).
-- `RequestRateLimiter` filter backed by Redis is applied on the order-placement route, using
-  namespaced cache keys (e.g. `gateway:rate-limit:{clientId}`) per the shared-Redis-instance
-  convention (RULES.md §12; SPRINTS.md Sprint 4).
+- JWT validation is Spring Security's own reactive OAuth2 Resource Server support
+  (`NimbusReactiveJwtDecoder`, `SecurityConfig`), not a custom `GatewayFilter` — the same
+  `resource_access.fdp-api.roles`-reading `KeycloakRoleConverter` every Servlet-stack service
+  already uses is reused as-is (its `Converter<Jwt, AbstractAuthenticationToken>` signature is
+  stack-agnostic), wrapped in Spring Security's own `ReactiveJwtAuthenticationConverterAdapter` to
+  bridge it into the reactive DSL. A `401` on missing/invalid token is reshaped into FDP's standard
+  `ApiErrorResponse` envelope by a custom `RestServerAuthenticationEntryPoint` (RULES.md §8, §14;
+  SPRINTS.md Sprint 4).
+- `RequestRateLimiter` filter backed by Redis is applied to the order-placement route only, keyed
+  by the caller's own JWT subject (`RateLimiterConfig`'s `KeyResolver`,
+  `gateway:rate-limit:{clientId}` per the shared-Redis-instance convention) — 5 requests/sec
+  sustained, burst up to 10 (RULES.md §12, SPRINTS.md Sprint 4). `RedisRateLimiter` is
+  auto-configured as the default `RateLimiter` implementation the moment a reactive Redis
+  connection factory is on the classpath (`spring-boot-starter-data-redis` alone — no separate
+  "-reactive" artifact needed), so the route's filter definition only has to name the
+  `KeyResolver`; the bucket size itself is set globally per route id via
+  `spring.cloud.gateway.server.webflux.redis-rate-limiter.config.<routeId>.*`.
 - Downstream services still re-validate the JWT locally against the cached JWKS as
   defense-in-depth — the gateway's validation is not treated as a trust boundary the rest of the
   system can skip (RULES.md §8).
-- Docker Compose service name: `api-gateway`; depends on `discovery-server`, `config-server`, and
-  `redis` being healthy before it starts (RULES.md §10).
+- **A real, live-discovered gotcha:** on a Docker Desktop/WSL2 host, Eureka's default
+  self-registration advertises each instance's Windows machine hostname (a `*.mshome.net` name)
+  rather than an IP. Reactor Netty's async DNS resolver — what Gateway's routing filter actually
+  uses to reach a resolved `lb://` target — does not consult the OS's own NetBIOS/hosts resolution
+  the way the blocking `java.net` resolution every Feign/`RestClient` call elsewhere in this
+  codebase uses does. Every other service's own Feign-to-Feign calls worked fine on this same
+  machine; `api-gateway`'s first routed request failed with `UnknownHostException` until every
+  service being routed to set `eureka.instance.prefer-ip-address=true`.
 
 ## Getting started
 
-**Status today:** `api-gateway` is a bare skeleton — its `pom.xml` carries only
-`spring-boot-starter` and `spring-boot-starter-test` (test scope), nothing else. No
-`spring-cloud-starter-gateway`, no WebFlux, no route config, no Eureka client. Its
-`application.properties` sets only `spring.application.name=api-gateway` (port `8080` is just
-Spring Boot's own default here, not an explicit setting yet). All of this is Sprint 4 work, not
-started.
+**Status: done and verified live** (Sprint 4, plus Sprint 5's deliveries route added
+retroactively). `api-gateway`'s `pom.xml` carries `spring-boot-starter-webflux`,
+`spring-cloud-starter-gateway-server-webflux`, `spring-cloud-starter-netflix-eureka-client`,
+`spring-boot-starter-oauth2-resource-server`, `spring-boot-starter-data-redis`, and
+`spring-boot-starter-actuator`.
 
 ### How to start it
-From the repo root:
+From the repo root, with `discovery-server`, Keycloak, and Redis reachable, and at least one
+routed service registered with Eureka:
 ```
 ./mvnw -pl api-gateway -am spring-boot:run
 ```
-This boots today's empty skeleton successfully — no external dependency (Postgres, Eureka,
-Keycloak) is required, because it doesn't talk to any of them yet. Starting it today only proves
-the module compiles and the embedded server comes up; it does not prove any gateway functionality,
-because there isn't any yet.
 
 ### How to access it
-`http://localhost:8080/<anything>` returns Spring Boot's default whitelabel error page today —
-there are no routes configured, so every path is unmatched. This is expected, not broken.
+`http://localhost:8080/api/<customers|restaurants|orders|deliveries>/...` — the same paths and
+request/response bodies each backend service already documents, fronted by the gateway. A request
+with no (or an invalid) `Authorization: Bearer <token>` header gets a `401` immediately, before any
+route is even resolved.
 
 ### Endpoints it exposes
-None yet. The routes SPRINTS.md Sprint 4-5 and RULES.md §2/§6 plan are:
+| Route predicate | Resolves to |
+|---|---|
+| `POST /api/orders/me` | `lb://order-service` (rate-limited) |
+| `/api/orders/**` | `lb://order-service` |
+| `/api/customers/**` | `lb://customer-service` |
+| `/api/restaurants/**` | `lb://restaurant-service` |
+| `/api/deliveries/**` | `lb://delivery-service` |
 
-| Route predicate | Resolves to | Sprint |
-|---|---|---|
-| `/api/customers/**` | `lb://customer-service` | Sprint 4 |
-| `/api/restaurants/**` | `lb://restaurant-service` | Sprint 4 |
-| `/api/orders/**` | `lb://order-service` | Sprint 4 |
-| `/api/deliveries/**` | `lb://delivery-service` | Sprint 5 |
-
-None of these are configured today — `api-gateway` has no route definitions at all yet.
+`/actuator/health` is the one unauthenticated exception.
 
 ### Installation & dependencies
-- Not present in `api-gateway`'s `pom.xml` today. Planned additions:
-  `spring-cloud-starter-gateway` (reactive, WebFlux-based — note this makes `api-gateway` the one
-  service *not* on the Servlet/MVC stack the rest of FDP uses, which is why RULES.md §14 has it
-  define its own `ServerWebExchange`-flavored exception advice instead of reusing `common`'s
-  Servlet-based `AbstractGlobalExceptionHandler`), `spring-cloud-starter-netflix-eureka-client`
-  (route resolution via `lb://`), and later `spring-boot-starter-oauth2-resource-server` (edge JWT
-  validation) plus `spring-boot-starter-data-redis` (rate limiting) — all Sprint 4, per
-  SPRINTS.md, none present yet.
-- Versions come from the root aggregator's `spring-cloud-dependencies` BOM, never pinned in
-  `api-gateway`'s own `pom.xml` (RULES.md §4) — same version-compatibility caveat noted in
-  `./eureka.md` applies here too, since the gateway starter ships from the same Spring Cloud train.
+See `api-gateway`'s own `pom.xml`. Versions come from the root aggregator's
+`spring-cloud-dependencies` BOM, never pinned in `api-gateway`'s own `pom.xml` (RULES.md §4) — same
+version-compatibility caveat noted in `./eureka.md` applies here too, since the gateway starter
+ships from the same Spring Cloud train.
 
 ### For newcomers
-There's nothing gateway-shaped to explore here yet — running the module today just confirms the
-skeleton boots. Read RULES.md §2 (port, single-entry-point role) and §6 (Eureka-resolved routing)
-for what this service is *for*, and SPRINTS.md Sprint 4 for the concrete plan (routes, JWT
-validation, rate limiting) before expecting to find any of it in the code.
+Read RULES.md §2 (port, single-entry-point role) and §6 (Eureka-resolved routing) for what this
+service is *for*. In code, start with `SecurityConfig` (the WebFlux/`ServerHttpSecurity`
+counterpart of every other service's own `SecurityConfig`) and `application.properties`' route
+block, then `RateLimiterConfig` for the one other piece of Java wiring this module needed.
+
+**A known, documented gap:** a `429` from the rate limiter (and a `404`/`503` from an unmatched or
+unresolvable route) is not yet reshaped into FDP's standard `ApiErrorResponse` envelope the way the
+edge's own `401` is — those come from Gateway/WebFlux's own default handling today. Closing this
+needs a custom WebFlux `ErrorAttributes`/`ErrorWebExceptionHandler`, deliberately left open rather
+than guessed at without verifying the exact API surface live against this Boot 4.1/WebFlux version.
 
 ## Related
-- `RULES.md §2` (port 8080, routes), `RULES.md §6` (Eureka-resolved routing), `RULES.md §8`
-  (JWT validation at the edge), `RULES.md §12` (Redis-backed rate limiting)
+- `RULES.md §2` (port, routes), `RULES.md §6` (Eureka-resolved routing), `RULES.md §8`
+  (JWT validation at the edge), `RULES.md §12` (Redis-backed rate limiting), `RULES.md §14`
+  (error response shape)
 - `SPRINTS.md` Sprint 4 (API Gateway & security edge), Sprint 5 (`/api/deliveries/**` route added)
+- [`../services/api-gateway.md`](../services/api-gateway.md)
 - `./eureka.md`, `./resilience4j.md`

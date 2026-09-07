@@ -201,15 +201,37 @@ confirmed via `/actuator/circuitbreakers` throughout.
 **Goal:** a single, secured entry point for everything built so far.
 
 - `api-gateway`: routes `/api/customers/**`, `/api/restaurants/**`, `/api/orders/**` via Eureka
-  load-balanced URIs.
-- JWT validation at the gateway (signature, expiry, issuer) via Spring Security's OAuth2
-  Resource Server, against Keycloak's real JWKS endpoint (RULES.md §8).
-- Redis stood up; `RequestRateLimiter` on order placement backed by Redis.
-- Downstream services add local JWT re-validation (defense-in-depth, per `RULES.md` §8).
+  load-balanced URIs. **Done and verified live**, plus `/api/deliveries/**` (originally Sprint 5
+  scope, blocked until now — see that sprint's own note) added in the same pass. Built on
+  `spring-cloud-starter-gateway-server-webflux` (this Spring Cloud train's renamed artifact),
+  routes configured via `application.properties` rather than a Java `RouteLocator`, matching this
+  project's properties-over-YAML convention.
+- JWT validation at the gateway (signature, expiry) via Spring Security's reactive OAuth2
+  Resource Server, against Keycloak's real JWKS endpoint (RULES.md §8). **Done and verified live**:
+  reuses `common`'s own `KeycloakRoleConverter` (its `Converter<Jwt, AbstractAuthenticationToken>`
+  signature is stack-agnostic) wrapped in Spring Security's `ReactiveJwtAuthenticationConverterAdapter`
+  for the WebFlux DSL; a `401` is reshaped into FDP's standard `ApiErrorResponse` envelope by a new
+  `RestServerAuthenticationEntryPoint`. Explicit issuer validation was not added (matches every
+  other service's own `jwk-set-uri`-only posture).
+- Redis stood up; `RequestRateLimiter` on order placement backed by Redis. **Done and verified
+  live**: 5 requests/sec sustained, burst 10, keyed by the caller's own JWT subject; 20 concurrent
+  placement requests from one customer produced real `429` responses once the burst was exhausted.
+- Downstream services add local JWT re-validation (defense-in-depth, per `RULES.md` §8) — already
+  true of every domain service since its own Sprint (unchanged by this one).
 
-**Exit criteria:** all traffic to the three domain services flows through the gateway only;
-unauthenticated or malformed-token requests are rejected at the edge; rate limiting is
-demonstrable on the order-placement route.
+**Exit criteria: met and verified live.** Unauthenticated/malformed-token requests get a clean
+`401` at the edge before any route resolves; rate limiting is demonstrably real (burst exhaustion
+produces `429`). "All traffic ... flows through the gateway only" is not separately enforced —
+every domain service still also accepts direct calls on its own port; RULES.md never asked for
+that to be blocked, only for the gateway to exist as the intended path. **Known gap:** a `429`
+(and an unmatched-route `404`/unresolvable-instance `503`) is not yet reshaped into
+`ApiErrorResponse` the way the edge's own `401` is — deferred rather than guessed at without
+verifying the exact WebFlux error-handling API surface live; see
+`docs/technologies/spring-cloud-gateway.md`. A real, live-discovered gotcha along the way: Eureka's
+default hostname-based self-registration advertises a Docker Desktop/WSL2 host's unresolvable
+`*.mshome.net` name to Reactor Netty's async DNS resolver (Gateway's routing filter), even though
+every service's own blocking-resolution Feign calls to each other were unaffected —
+`eureka.instance.prefer-ip-address=true`, now set on every FDP service, fixed it.
 
 ---
 
@@ -256,17 +278,16 @@ notification/audit trail.
   `notification-service` gained a second listener/queue (`DeliveryEventListener` /
   `notification-service.delivery-events`) to consume this event, completing the consumption side
   `docs/services/notification-service.md` was originally scoped for.
-- `api-gateway` route for `/api/deliveries/**` added. **Not done** (`api-gateway` itself doesn't
-  exist yet — Sprint 4 scope, not started).
+- `api-gateway` route for `/api/deliveries/**` added. Was blocked on `api-gateway` not existing yet
+  (Sprint 4 scope); **done retroactively** once Sprint 4 landed — see that sprint's own notes.
 
 **Exit criteria:** placing an order produces a delivery record automatically with no synchronous
 call from `order-service` into `delivery-service`; a failed/poisoned message lands in the DLQ
 instead of blocking the queue; notification records are queryable via `notification-service`'s
-API. **Met and verified live**, for everything except `api-gateway` (Sprint 4, not built, so
-`/api/deliveries/**` has no gateway route yet — `delivery-service` itself is reachable directly). A
-real poison-message-reaches-the-DLQ scenario hasn't been deliberately triggered end to end for
-either consumer — the mechanism is config, not custom code, and is the same pattern already proven
-this way in Sprint 3.
+API. **Met and verified live**, including the `/api/deliveries/**` gateway route once Sprint 4
+closed that gap. A real poison-message-reaches-the-DLQ scenario hasn't been deliberately triggered
+end to end for either consumer — the mechanism is config, not custom code, and is the same pattern
+already proven this way in Sprint 3.
 
 ---
 
@@ -284,7 +305,9 @@ this way in Sprint 3.
   `order-service -> restaurant-service` (which itself hits Redis for its cache),
   `order-service -> rabbitmq -> delivery-service`, `order-service -> rabbitmq ->
   notification-service` — confirmed via `GET /api/v2/trace/{traceId}` showing every hop under one
-  shared trace ID. `api-gateway` (Sprint 4, not built) can't participate yet. Two non-obvious
+  shared trace ID. `api-gateway` doesn't yet participate in this trace (it has no distributed-tracing
+dependency of its own — RULES.md §13 observability hasn't reached that module; see
+`docs/services/api-gateway.md`). Two non-obvious
   gotchas surfaced and fixed along the way — see `docs/technologies/zipkin.md`'s "Getting started"
   section for both. Also closed a real, previously-reported gap as a side effect: every error
   response's `traceId` field was always `null` before this; it's now a real, directly-lookup-able

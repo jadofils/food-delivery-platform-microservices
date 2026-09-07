@@ -127,7 +127,8 @@ class to a single service — the fan-out above is exactly why.
   declare a `<dependencies>` block — nothing should be force-inherited onto every service.
 - Each service's own `pom.xml` declares the actual `<dependencies>` it uses, without version
   numbers (inherited from the parent's `dependencyManagement`). `api-gateway` does not depend on
-  `spring-boot-starter-data-jpa`; `customer-service` does not depend on `spring-cloud-starter-gateway`.
+  `spring-boot-starter-data-jpa`; `customer-service` does not depend on
+  `spring-cloud-starter-gateway-server-webflux`.
   A service's POM should read as an accurate list of what that service actually needs.
 - Never copy a dependency version into a service POM to "pin" it — bump the version in the root
   BOM/properties instead, so every service moves together and drift is impossible.

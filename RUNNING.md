@@ -29,11 +29,8 @@ cover that.
 | `order-service` | Maven | `order-service` | 8084 | **Implemented** (needs `postgres`, `keycloak`, `rabbitmq`, `discovery-server`, `customer-service`, `restaurant-service`) |
 | `delivery-service` | Maven | `delivery-service` | 8085 | **Implemented** (needs `postgres`, `keycloak`, `rabbitmq`, `discovery-server`; place an order via `order-service` to generate data) |
 | `notification-service` | Maven | `notification-service` | 8086 | **Implemented** (needs `mongodb`, `keycloak`, `rabbitmq`, `discovery-server`; place an order via `order-service` to generate data) |
-| `api-gateway` | Maven | `api-gateway` | 8080 | Skeleton — boots, no routes yet |
+| `api-gateway` | Maven | `api-gateway` | 8080 | **Implemented** (needs `discovery-server`, `keycloak`, `redis`; routes to whichever of the four domain services are actually running) |
 | `common` | — | — | — | Shared library, not a runnable service |
-
-"Skeleton" services start fine (`spring-boot:run` boots successfully) but have no business
-endpoints yet — starting one just proves it compiles and boots.
 
 ---
 
@@ -277,9 +274,9 @@ sleep 6
 (java -jar order-service/target/order-service-0.0.1-SNAPSHOT.jar        > /tmp/order-service.log       2>&1 &)
 (java -jar delivery-service/target/delivery-service-0.0.1-SNAPSHOT.jar  > /tmp/delivery-service.log    2>&1 &)
 (java -jar notification-service/target/notification-service-0.0.1-SNAPSHOT.jar > /tmp/notification-service.log 2>&1 &)
+sleep 3
+(java -jar api-gateway/target/api-gateway-0.0.1-SNAPSHOT.jar             > /tmp/api-gateway.log       2>&1 &)
 ```
-(`api-gateway` can be started the same way, but it's a skeleton today — nothing to exercise on it
-yet.)
 
 ### "I want to see the resilience/circuit-breaker story for myself"
 ```bash
@@ -348,6 +345,18 @@ shows it counting down from two minutes. `PUT /api/restaurants/me` (as the ownin
 `RESTAURANT_OWNER`) and check `keys '*'` again — the entry is gone, evicted immediately rather than
 waiting out the TTL; the next `GET` repopulates it with the new value.
 
+### "I want to see api-gateway routing and rate limiting for myself"
+With `discovery-server`, `keycloak`, `redis`, and at least `customer-service`/`restaurant-service`/
+`order-service`/`delivery-service` running, call the *same* paths through `api-gateway` on `8080`
+instead of each service's own port — `GET http://localhost:8080/api/customers/me`,
+`.../api/restaurants`, `.../api/orders/me`, `.../api/deliveries/by-order/{orderId}`, same bearer
+token, same bodies. With no token at all, every one of those gets a `401` immediately, before the
+gateway even attempts to resolve a route. To see the rate limiter trip, fire a burst of concurrent
+`POST /api/orders/me` calls through the gateway as the same customer (bash: `for i in $(seq 1 20);
+do curl ... & done; wait`) — burst capacity is 10, so several of the 20 come back `429 Too Many
+Requests` once it's exhausted; check `X-RateLimit-Remaining` on any single successful response to
+see the bucket draining in real time.
+
 ### "I only need the databases/broker up, no application code running"
 ```bash
 docker compose up -d
@@ -358,6 +367,14 @@ That's it — no FDP service needs to be running for this.
 
 ## Troubleshooting
 
+- **`api-gateway` returns `500` with `UnknownHostException: Failed to resolve '<hostname>.mshome.net'`
+  for every routed request** — a Docker Desktop/WSL2-on-Windows-specific gotcha: Eureka's default
+  self-registration advertises the machine's own hostname, which Reactor Netty's async DNS
+  resolver (what Gateway's routing filter uses) can't resolve, even though every other service's
+  Feign-to-Feign calls on the same machine work fine (they use blocking `java.net` resolution,
+  which does consult the OS's own NetBIOS/hosts resolution). Every FDP service already sets
+  `eureka.instance.prefer-ip-address=true` to register by IP instead — if you see this, check that
+  property is actually present in whichever service's `application.properties` you're routing to.
 - **A service fails with `database "customer_db"` (or `"restaurant_db"`/`"order_db"`/`"delivery_db"`) `does not exist`** — this
   happens if `postgres`'s data volume already existed *before*
   `docker/postgres/init-databases.sql` was updated to create that database (init scripts only run
