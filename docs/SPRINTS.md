@@ -254,13 +254,30 @@ open.
 **Goal:** the running system is legible without attaching a debugger.
 
 - Micrometer Tracing (Brave) → Zipkin on every service; trace continuity verified across a full
-  order → delivery → notification flow, including the RabbitMQ hop.
+  order → delivery → notification flow, including the RabbitMQ hop. **Done and verified live for
+  every service that exists today** (`customer-service`, `restaurant-service`, `order-service`,
+  `notification-service`) — pulled forward the same way order-service's async publish was pulled
+  forward into Sprint 3. A real order placement produces one trace spanning all four services plus
+  the RabbitMQ hop, confirmed both via `GET /api/v2/trace/{traceId}` and Zipkin's own
+  `/api/v2/dependencies` call graph, which matches the real architecture exactly
+  (`order-service -> customer-service`, `order-service -> restaurant-service`,
+  `order-service -> rabbitmq -> notification-service`). `delivery-service`/`api-gateway` (Sprint 5/4,
+  not built) can't participate yet. Two non-obvious gotchas surfaced and fixed — see
+  `docs/technologies/zipkin.md`'s "Getting started" section for both. Also closed a real,
+  previously-reported gap as a side effect: every error response's `traceId` field was always
+  `null` before this; it's now a real, directly-lookup-able Zipkin trace ID.
 - Elasticsearch + Logstash + Kibana added to `docker-compose.yml`; every service's stdout JSON
-  logs land in Kibana, correlated by trace ID.
-- Actuator health/metrics/circuitbreaker endpoints exposed and verified on every service.
+  logs land in Kibana, correlated by trace ID. **Not done.**
+- Actuator health/metrics/circuitbreaker endpoints exposed and verified on every service. Health
+  was already exposed and verified per-service as each was built; `circuitbreakers` is exposed on
+  `order-service` specifically (its only service with circuit breakers, Sprint 3). **Not done:**
+  `/actuator/metrics`/`/actuator/prometheus` are not yet exposed anywhere (Prometheus/Grafana are
+  explicitly Sprint 9 scope, RULES.md §13).
 
 **Exit criteria:** a single order can be traced end-to-end in Zipkin across all five services it
-touches, and its logs can be found in Kibana filtered by that trace ID.
+touches, and its logs can be found in Kibana filtered by that trace ID. **Partially met:** the
+tracing half is done and verified live across every service that exists today (four, not five —
+`delivery-service` doesn't exist yet). The Kibana/logs half remains open.
 
 ---
 

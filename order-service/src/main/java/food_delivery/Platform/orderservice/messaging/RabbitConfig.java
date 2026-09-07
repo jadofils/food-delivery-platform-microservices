@@ -7,6 +7,7 @@ import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.boot.amqp.autoconfigure.RabbitTemplateConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -67,10 +68,22 @@ public class RabbitConfig {
 		return new JacksonJsonMessageConverter("food_delivery.Platform.common.event");
 	}
 
+	/**
+	 * Built via Boot's own {@link RabbitTemplateConfigurer} rather than {@code new RabbitTemplate(...)}
+	 * directly — a hand-constructed template bypasses Boot's {@code spring.rabbitmq.template.*}
+	 * property binding entirely, including {@code observation-enabled} (RULES.md §13): without this,
+	 * the publish call carries no trace-propagation headers and never appeared as a span in
+	 * order-service's own trace, confirmed empirically against a real running Zipkin. This
+	 * configurer applies that (and every other {@code spring.rabbitmq.template.*} property) the same
+	 * way Boot's own autoconfigured {@code RabbitTemplate} would, while still letting this service
+	 * set its own {@link MessageConverter}.
+	 */
 	@Bean
-	public RabbitTemplate rabbitTemplate(org.springframework.amqp.rabbit.connection.ConnectionFactory connectionFactory,
+	public RabbitTemplate rabbitTemplate(RabbitTemplateConfigurer configurer,
+			org.springframework.amqp.rabbit.connection.ConnectionFactory connectionFactory,
 			MessageConverter jsonMessageConverter) {
 		RabbitTemplate template = new RabbitTemplate(connectionFactory);
+		configurer.configure(template, connectionFactory);
 		template.setMessageConverter(jsonMessageConverter);
 		return template;
 	}

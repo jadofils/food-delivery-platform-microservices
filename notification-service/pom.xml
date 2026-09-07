@@ -43,6 +43,16 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
+		<!-- Distributed tracing (RULES.md §13): Boot 4.1 split tracing autoconfiguration into its
+			 own starter, declaring micrometer-tracing-bridge-brave/zipkin-reporter-brave directly
+			 pulls in the bridge library but not the autoconfiguration that actually wires the Tracer/
+			 Zipkin-reporting beans (confirmed empirically: no span ever reached Zipkin with just
+			 those two). This starter is what spring-boot-dependencies' own BOM defines for this.
+			 Version managed by Boot's own parent BOM (RULES.md §4). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-zipkin</artifactId>
+		</dependency>
 		<!-- Version managed by the root aggregator's spring-cloud-dependencies BOM import -->
 		<dependency>
 			<groupId>org.springframework.cloud</groupId>

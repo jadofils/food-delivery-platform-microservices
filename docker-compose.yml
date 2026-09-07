@@ -1,8 +1,9 @@
 # Sprint 0 (RULES.md §10, SPRINTS.md Sprint 0) added the four backing infra containers —
-# Postgres, MongoDB, RabbitMQ, Redis; Sprint 1 added Keycloak, the identity provider. No FDP
+# Postgres, MongoDB, RabbitMQ, Redis; Sprint 1 added Keycloak, the identity provider; Zipkin
+# (Sprint 6 scope) was pulled forward the same way, ahead of the services that use it. No FDP
 # service is defined here yet; each joins this file in the sprint that actually needs it (see
 # RUNNING.md for how each currently runs instead — Maven, not Docker), and the full compose file
-# (all eight services + Zipkin/ELK/Prometheus/Grafana) is finalized in Sprint 7.
+# (all eight services + ELK/Prometheus/Grafana) is finalized in Sprint 7.
 #
 # Every container below follows one naming convention: container_name "fdp-<name>", a pinned
 # version tag (never "latest") — see RUNNING.md's "Naming & tagging" section.
@@ -130,5 +131,23 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - fdp-network
+
+  # Distributed tracing (RULES.md §13, Sprint 6) -- pulled forward here the same way Redis/MongoDB
+  # were stood up in Sprint 0 ahead of any service using them. Zipkin's own default storage
+  # (in-memory) is fine for local dev -- no persistent volume, traces are meant to be ephemeral.
+  zipkin:
+    image: openzipkin/zipkin:3
+    container_name: fdp-zipkin
+    restart: unless-stopped
+    ports:
+      - "${ZIPKIN_PORT:-9411}:9411"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:9411/health | grep -q '\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks:
       - fdp-network

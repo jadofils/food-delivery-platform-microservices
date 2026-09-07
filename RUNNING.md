@@ -21,6 +21,7 @@ cover that.
 | `rabbitmq` | Docker | `fdp-rabbitmq` | 5672 (AMQP), 15672 (mgmt UI) | Infra — live, in real use by `order-service` (publish) and `notification-service` (consume) |
 | `redis` | Docker | `fdp-redis` | 6379 | Infra — live, unused by any service yet |
 | `keycloak` | Docker | `fdp-keycloak` | 8180 | Infra — live, identity provider |
+| `zipkin` | Docker | `fdp-zipkin` | 9411 | Infra — live, in real use by all four built services (distributed tracing) |
 | `config-server` | Maven (`spring-boot:run`) | `config-server` | 8888 | **Implemented** |
 | `discovery-server` | Maven | `discovery-server` | 8761 | **Implemented** |
 | `customer-service` | Maven | `customer-service` | 8082 | **Implemented** (needs `postgres` + `keycloak`) |
@@ -226,6 +227,23 @@ in `credentials.md` — not repeated here to avoid the two files drifting apart.
 
 ---
 
+## Distributed tracing (Zipkin)
+
+All four built services report real spans. Verified live: placing a real order produces one trace
+spanning `order-service` → `customer-service`/`restaurant-service` (Feign) → RabbitMQ →
+`notification-service` — see `docs/technologies/zipkin.md` for the two dependency/config gotchas
+that made this actually work.
+
+| What | Where |
+|---|---|
+| Zipkin UI | http://localhost:9411 |
+| Search traces by service | `GET http://localhost:9411/api/v2/traces?serviceName=order-service` |
+| Fetch one trace by ID | `GET http://localhost:9411/api/v2/trace/{traceId}` — the `traceId` is on every error response too (see below) |
+| Service dependency graph (derived from recent traces) | `GET http://localhost:9411/api/v2/dependencies` |
+| A client-reported failure's trace | Copy the `traceId` field off any error response and open `http://localhost:9411/zipkin/traces/{traceId}` directly — no need to ask when the failure happened |
+
+---
+
 ## Common recipes
 
 ### "I want to test the full order flow end to end (e.g. in Postman)"
@@ -246,7 +264,7 @@ through `order-service` on your behalf.
 
 ### "I want everything currently implemented running together"
 ```bash
-docker compose up -d                                                     # all 5 infra containers
+docker compose up -d                                                     # all 6 infra containers
 ./mvnw clean package -DskipTests                                         # build every module once
 (java -jar discovery-server/target/discovery-server-0.0.1-SNAPSHOT.jar   > /tmp/discovery-server.log   2>&1 &)
 (java -jar config-server/target/config-server-0.0.1-SNAPSHOT.jar        > /tmp/config-server.log       2>&1 &)
@@ -283,6 +301,16 @@ notification record is there within a couple of seconds, persisted in MongoDB's 
 exact same event twice from RabbitMQ's management UI (**Queues →
 notification-service.order-events**, re-publish a message you already got via Get Messages) —
 exactly one notification results, not two.
+
+### "I want to see the distributed trace for myself"
+With all four built services and `zipkin` running, place a real order via Postman/curl, then open
+`http://localhost:9411`, search for service `order-service`, and open the most recent trace for
+`http post /api/orders/me` — one trace, spanning `order-service`'s own HTTP handling, its Feign
+calls into `customer-service`/`restaurant-service`, the RabbitMQ publish, and
+`notification-service`'s consumption of that message. `GET
+http://localhost:9411/api/v2/dependencies` shows the same story as a call graph instead of a
+timeline. Trigger any validation error (e.g. place an order with `"items": []`) and check the
+response's `traceId` field — it's a real trace ID now, directly open-able in Zipkin.
 
 ### "I only need the databases/broker up, no application code running"
 ```bash

@@ -19,80 +19,133 @@ request and seeing the latency breakdown across every hop it took.
 
 ## Where it's used
 
-| Service/module | Role | Sprint |
-|---|---|---|
-| All eight services (RULES.md §2) | Emit spans via Micrometer Tracing (Brave), report to Zipkin | Sprint 6 |
+| Service/module | Role | Sprint | Status |
+|---|---|---|---|
+| `customer-service`, `restaurant-service`, `order-service`, `notification-service` | Emit spans via Micrometer Tracing (Brave), report to Zipkin | Sprint 6 (pulled forward) | Done, verified live |
+| `api-gateway`, `delivery-service` | Same, once built | Sprint 6 | Not built yet |
 
 Sprint 6 exit criteria (SPRINTS.md): "a single order can be traced end-to-end in Zipkin across all
-five services it touches."
+five services it touches." Met for the four services that exist today — a real order placement
+produces one trace across `order-service`, `customer-service`, `restaurant-service`, and
+`notification-service` (via the RabbitMQ hop). `delivery-service`/`api-gateway` aren't built yet,
+so they can't participate.
 
 ## How it's implemented in FDP
-- Dependencies: `micrometer-tracing-bridge-brave` (bridges Micrometer's tracing API to Brave) plus
-  a Zipkin reporter (`io.zipkin.reporter2:zipkin-reporter-brave`), added to every service per
-  RULES.md §13.
+- Dependency: `org.springframework.boot:spring-boot-starter-zipkin` on every service (**not**
+  `micrometer-tracing-bridge-brave`/`zipkin-reporter-brave` declared directly — see the gotcha
+  below), plus `io.github.openfeign:feign-micrometer` on any service with Feign clients
+  (`order-service`), per RULES.md §13.
 - Config keys: `management.tracing.sampling.probability` and
-  `management.zipkin.tracing.endpoint`, set per `application-{profile}.yml` and sourced through
-  `config-server` — never hardcoded, per RULES.md §1 factor 3.
+  `management.zipkin.tracing.endpoint` on every service; `spring.rabbitmq.template.observation-enabled`
+  (publish side, `order-service`) and `spring.rabbitmq.listener.simple.observation-enabled` (consume
+  side, `notification-service`) for the RabbitMQ hop specifically. Hardcoded to `localhost`
+  per-service today, matching every other service's not-yet-wired `config-server` scope cut — not
+  yet sourced through `config-server` (RULES.md §1 factor 3 is a documented gap here, same as
+  elsewhere).
 - No manual span creation is required for the standard flow: Micrometer Tracing auto-instruments
-  Spring MVC/WebFlux request handling, OpenFeign calls, and RabbitMQ listener/publisher hops
-  (RULES.md §13).
-- Micrometer Tracing also populates the trace/span ID into MDC automatically, so every service's
-  stdout JSON log line (RULES.md §11) is correlated to its Zipkin trace with no manual wiring per
-  service (RULES.md §13).
+  Spring MVC request handling, OpenFeign calls (once `feign-micrometer` is present), and RabbitMQ
+  publish/listen hops (once `observation-enabled` is set) — RULES.md §13. Two non-obvious
+  dependency/config requirements were needed to actually get there — see `Getting started` below.
+- Micrometer Tracing also populates the trace/span ID into MDC automatically (keys `traceId`/
+  `spanId`) — `common`'s `AbstractGlobalExceptionHandler.traceId()` already read `MDC.get("traceId")`
+  ahead of this being wired up; it now returns a real value instead of always `null`, confirmed live.
 - Docker Compose service name: `zipkin`. RULES.md §10 requires it defined in `docker-compose.yml`
-  with a health check; RULES.md/SPRINTS.md do not pin an explicit host port for it — the Zipkin
-  image's conventional port is `9411`.
+  with a health check — done; port `9411` (Zipkin's own convention), overridable via `ZIPKIN_PORT`.
 
 ## Getting started
 
-**Status today:** Not yet stood up. Zipkin has no service block in the repo-root
-`docker-compose.yml` (which today only defines `postgres`, `mongodb`, `rabbitmq`, `redis`, and
-`keycloak` — Sprint 0/1 scope) and no service's `pom.xml` carries a tracing dependency. This is
-entirely Sprint 6 ("Observability") work that has not started.
+**Status today:** Live and in real use — the tracing half of Sprint 6, pulled forward the same way
+order-service's async publish was pulled forward into Sprint 3. All four built services
+(`customer-service`, `restaurant-service`, `order-service`, `notification-service`) report real
+spans. Verified live: placing a real order produces **one trace spanning all five hops** —
+`order-service`'s own HTTP handling, its Feign calls into `customer-service` and
+`restaurant-service`, the RabbitMQ publish, and `notification-service`'s consumption of that
+message — confirmed both via `GET /api/v2/trace/{traceId}` (a single `traceId` shared across every
+span) and Zipkin's own dependency graph:
+```
+order-service -> customer-service
+order-service -> restaurant-service
+order-service -> rabbitmq
+rabbitmq -> notification-service
+```
+Also confirmed: a client-facing error response's `traceId` field (previously always `null` — a
+real, user-reported gap) is now a real, directly-lookup-able Zipkin trace ID.
+
+Two real gotchas surfaced getting this working, both confirmed by empirical testing against a live
+Zipkin instance rather than assumed from documentation:
+- **`micrometer-tracing-bridge-brave` + `zipkin-reporter-brave` alone report nothing.** Boot 4.1
+  split tracing autoconfiguration into its own starter, `spring-boot-starter-zipkin` — it's the one
+  that actually pulls in the autoconfiguration modules (`spring-boot-micrometer-tracing-brave`,
+  `spring-boot-zipkin`) that wire the `Tracer`/reporter beans. Declaring the bridge/reporter
+  libraries directly gets them onto the classpath but wires nothing — confirmed by placing a real
+  order and finding zero services registered in Zipkin (`GET /api/v2/services` returned `[]`)
+  until the starter was used instead.
+- **A hand-constructed `RabbitTemplate` bean bypasses `spring.rabbitmq.template.observation-enabled`
+  entirely.** `order-service`'s `RabbitConfig` builds its own `RabbitTemplate` (to set a custom
+  `MessageConverter`), which meant Boot's own `RabbitTemplateConfigurer` — the thing that actually
+  reads `spring.rabbitmq.template.*` properties, including `observation-enabled` — never ran
+  against it. The publish call carried no trace-propagation headers, and RabbitMQ never appeared as
+  a hop in the trace at all. Fixed by injecting `RabbitTemplateConfigurer` (auto-configured by
+  `spring-boot-amqp`) and calling `configure(template, connectionFactory)` before setting the
+  custom converter — the idiomatic fix for "I need a custom `RabbitTemplate` but still want Boot's
+  own property-driven configuration."
 
 ### How to start it
-There is nothing to start today. Once Sprint 6 adds the `zipkin` service block described above
-(`How it's implemented in FDP`), it will start the same way every other infra container in this
-repo does:
+From the repo root:
 ```
 docker compose up -d zipkin
 ```
-This is planned/future — the command above will not work yet, because the service block does not
-exist in `docker-compose.yml` as of now.
+This alone (no `.env` file needed) starts a single Zipkin container using its default in-memory
+storage — fine for local dev, since traces are meant to be ephemeral here, not a permanent audit
+trail (that's `notification-service`'s job, over MongoDB, for actual domain events).
 
 ### How to access it
-Not reachable yet — nothing is running. Once stood up, Zipkin's stock UI conventionally listens on
-`http://localhost:9411`, but RULES.md/SPRINTS.md do not pin an explicit host port for FDP's
-instance; the actual port will be whatever Sprint 6 assigns when the compose block is added.
+- **UI/API:** `http://localhost:9411` (override via `ZIPKIN_PORT` in a repo-root `.env` file — see
+  `.env.example`). Search for a service, or open a specific trace ID directly at
+  `http://localhost:9411/zipkin/traces/{traceId}`.
+- **Health:** `docker compose ps zipkin` shows `healthy` once `GET /health` reports `"status":"UP"`.
 
 ### Endpoints it exposes
-Not live in this repo yet — the list below is Zipkin's own stock API, for reference once Sprint 6
-stands it up, not something callable today.
-| Endpoint | Purpose |
-|---|---|
-| `GET /` | Zipkin dashboard (HTML) |
-| `GET /api/v2/traces` | Query traces matching search criteria |
-| `GET /api/v2/trace/{traceId}` | Fetch a single trace by ID |
-| `GET /health` | Liveness/readiness |
-| `POST /api/v2/spans` | Span ingestion (called by reporting services, not by hand) |
+| Endpoint | Purpose | Status |
+|---|---|---|
+| `GET /` | Zipkin dashboard (HTML) | Live |
+| `GET /api/v2/services` | List every service that has reported a span | Live, verified — returns all four built services |
+| `GET /api/v2/traces?serviceName=...` | Query traces matching search criteria | Live, verified |
+| `GET /api/v2/trace/{traceId}` | Fetch a single trace by ID | Live, verified — confirmed one trace spans all five hops of a real order placement |
+| `GET /api/v2/dependencies` | Aggregate service-to-service call graph derived from recent traces | Live, verified — matches the real architecture exactly |
+| `GET /health` | Liveness/readiness | Live |
+| `POST /api/v2/spans` | Span ingestion (called by reporting services, not by hand) | Live |
 
 ### Installation & dependencies
-Once wired up, every one of the eight services will need `micrometer-tracing-bridge-brave` plus a
-Zipkin reporter (`io.zipkin.reporter2:zipkin-reporter-brave`), per RULES.md §13 — version managed
-by the root aggregator's BOM, never pinned per-service (RULES.md §4). None of this is in any
-`pom.xml` today: `grep -r micrometer-tracing --include=pom.xml .` across the repo returns nothing.
+- Docker image: `openzipkin/zipkin:3` (pinned in `docker-compose.yml`).
+- Every built service (`customer-service`, `restaurant-service`, `order-service`,
+  `notification-service`) declares `org.springframework.boot:spring-boot-starter-zipkin` — **not**
+  `micrometer-tracing-bridge-brave`/`zipkin-reporter-brave` directly (see the gotcha above). Version
+  managed by Boot's own parent BOM (RULES.md §4).
+- `order-service` additionally declares `io.github.openfeign:feign-micrometer` — without it, an
+  outbound Feign call carries no trace-propagation headers at all, and the downstream service starts
+  a disconnected trace of its own instead of continuing the caller's (confirmed empirically the same
+  way as the RabbitMQ gotcha above). Version managed by `spring-cloud-dependencies` (RULES.md §4).
+- Config: `management.tracing.sampling.probability=1.0` (trace everything — a deliberate
+  local-dev-only choice, RULES.md §1 factor 3 would want a sampled fraction in production) and
+  `management.zipkin.tracing.endpoint=http://localhost:9411/api/v2/spans` on every service;
+  `order-service` additionally sets `spring.rabbitmq.template.observation-enabled=true` (publish
+  side) and `notification-service` sets `spring.rabbitmq.listener.simple.observation-enabled=true`
+  (consume side) — both required for the RabbitMQ hop to join the trace rather than starting a new
+  one, verified by inspecting `RabbitProperties.Template`/`RabbitProperties.BaseContainer` directly
+  (`javap`) before writing the property names down.
 
 ### For newcomers
-There is nothing to click on or run for Zipkin yet — no container, no UI, no dependency in any
-service. See `docs/RULES.md` §13 for the plan and `docs/SPRINTS.md` Sprint 6 for when it lands.
-Once it exists, the destination is this: a single order request gets one trace ID, and that same
-ID shows up in three places — the Zipkin trace itself, every Kibana log line for that request, and
-the `traceId` field of any error response the client sees (RULES.md §13) — so a reported failure
-can be looked up in Zipkin directly from the trace ID in the error, with no need to ask when it
-happened.
+Run `docker compose up -d zipkin`, start the four built services, place a real order (see
+`docs/services/order-service.md` or any checked-in Postman collection), then open
+`http://localhost:9411`, search for `order-service`, and open the most recent trace for
+`http post /api/orders/me` — one trace, five services, latency broken down per hop. `GET
+/api/v2/dependencies` gives the same story as a call graph instead of a timeline. See
+`./resilience4j.md` and `./rabbitmq.md` for the sync/async mechanics this trace is actually showing
+you the shape of.
 
 ## Related
 - `RULES.md §13` (observability — tracing), `RULES.md §14` (API error contract — `traceId`),
   `RULES.md §10` (containerization)
-- `SPRINTS.md` Sprint 6 (Observability)
-- `./elasticsearch.md`, `./kibana.md`
+- `SPRINTS.md` Sprint 6 (Observability) — tracing half done, ELK/Prometheus/Grafana still open
+- `./elasticsearch.md`, `./kibana.md`, `./resilience4j.md`, `./rabbitmq.md`
