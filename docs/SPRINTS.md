@@ -221,9 +221,11 @@ confirmed via `/actuator/circuitbreakers` throughout.
 
 **Exit criteria: met and verified live.** Unauthenticated/malformed-token requests get a clean
 `401` at the edge before any route resolves; rate limiting is demonstrably real (burst exhaustion
-produces `429`). "All traffic ... flows through the gateway only" is not separately enforced —
-every domain service still also accepts direct calls on its own port; RULES.md never asked for
-that to be blocked, only for the gateway to exist as the intended path. **Known gap:** a `429`
+produces `429`). "All traffic ... flows through the gateway only" is not separately enforced by any
+mechanism, but is now the only *practical* path in: every domain service moved to a dynamic,
+OS-assigned port immediately after this sprint landed (a deliberate follow-on, not originally
+scoped by any sprint text — see the note below), so there is no stable direct address left to call
+even if something wanted to bypass the gateway. **Known gap:** a `429`
 (and an unmatched-route `404`/unresolvable-instance `503`) is not yet reshaped into
 `ApiErrorResponse` the way the edge's own `401` is — deferred rather than guessed at without
 verifying the exact WebFlux error-handling API surface live; see
@@ -232,6 +234,19 @@ default hostname-based self-registration advertises a Docker Desktop/WSL2 host's
 `*.mshome.net` name to Reactor Netty's async DNS resolver (Gateway's routing filter), even though
 every service's own blocking-resolution Feign calls to each other were unaffected —
 `eureka.instance.prefer-ip-address=true`, now set on every FDP service, fixed it.
+
+**Follow-on, done immediately after (not itself scoped by this or any sprint's original text):**
+every domain service (`customer-`/`restaurant-`/`order-`/`delivery-`/`notification-service`) moved
+from a fixed port to `server.port=0` (OS-assigned), now that `api-gateway` actually exists to give
+each one a stable address to be reached through. `config-server`, `discovery-server`, and
+`api-gateway` itself keep fixed ports, as infrastructure with a well-known address other things
+bootstrap from or route through (RULES.md §2, updated). A sixth gateway route,
+`/api/notifications/**` → `lb://notification-service`, was added alongside this — not part of the
+original Sprint 4/5 route table, but necessary once `notification-service` had no fixed port of its
+own left to be reached on directly. **Verified live:** all six routes work through the gateway with
+a real customer token; two `customer-service` instances started side by side registered under two
+different ports with zero config, and the gateway's default round-robin load balancing spread
+requests across both — the actual capability this whole change was for (RULES.md §1 factor 8).
 
 ---
 

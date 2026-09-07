@@ -52,6 +52,18 @@ host/port.
 - Docker Compose service name: `discovery-server`, matching the module name; other services'
   `depends_on: condition: service_healthy` ensures `discovery-server` is ready before dependents
   start (RULES.md §10).
+- Every domain service sets `server.port=0` (OS-assigned) rather than a fixed port (RULES.md §2) —
+  Eureka's own instance-id template already includes the port, so distinct random ports register
+  as distinct, individually load-balanced instances automatically, no extra config needed. This is
+  what makes real horizontal scaling possible on one machine (RULES.md §1 factor 8): a second
+  instance of the same service just starts, with zero collision. Every domain service (plus
+  `api-gateway`, for consistency even though nothing currently routes to it via `lb://`) also sets
+  `eureka.instance.prefer-ip-address=true` — a real, live-discovered gotcha on Docker
+  Desktop/WSL2 hosts, where Eureka's default hostname-based self-registration advertises an
+  unresolvable `*.mshome.net` name to Reactor Netty's async DNS resolver (what `api-gateway`'s
+  routing filter uses), even though the same hostname resolves fine for every Feign client's
+  blocking `java.net` resolution elsewhere in this codebase. See
+  `docs/services/api-gateway.md`/`./spring-cloud-gateway.md` for how this was actually found.
 
 ## Getting started
 

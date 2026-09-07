@@ -44,6 +44,9 @@ header rewriting), and forwards the request to a resolved backend.
   - `/api/customers/**` → `lb://customer-service`
   - `/api/restaurants/**` → `lb://restaurant-service`
   - `/api/deliveries/**` → `lb://delivery-service`
+  - `/api/notifications/**` → `lb://notification-service` (not originally scoped by any sprint —
+    added once every domain service moved to a dynamic port, since without it
+    `notification-service` would have had no stable address left at all)
   (RULES.md §2, §6; SPRINTS.md Sprint 4 and Sprint 5)
 - JWT validation is Spring Security's own reactive OAuth2 Resource Server support
   (`NimbusReactiveJwtDecoder`, `SecurityConfig`), not a custom `GatewayFilter` — the same
@@ -73,6 +76,12 @@ header rewriting), and forwards the request to a resolved backend.
   codebase uses does. Every other service's own Feign-to-Feign calls worked fine on this same
   machine; `api-gateway`'s first routed request failed with `UnknownHostException` until every
   service being routed to set `eureka.instance.prefer-ip-address=true`.
+- **Every domain service binds to `server.port=0`** (OS-assigned), not a fixed port (RULES.md §2)
+  — `api-gateway` is the only stable address left for reaching any of them. This is what makes
+  real horizontal scaling possible on one machine: a second instance of the same service registers
+  under its own free port with zero config, and Spring Cloud LoadBalancer's default round-robin
+  strategy spreads gateway-routed requests across every registered instance automatically (RULES.md
+  §1 factor 8) — verified live with two `customer-service` instances running side by side.
 
 ## Getting started
 
@@ -90,10 +99,10 @@ routed service registered with Eureka:
 ```
 
 ### How to access it
-`http://localhost:8080/api/<customers|restaurants|orders|deliveries>/...` — the same paths and
-request/response bodies each backend service already documents, fronted by the gateway. A request
-with no (or an invalid) `Authorization: Bearer <token>` header gets a `401` immediately, before any
-route is even resolved.
+`http://localhost:8080/api/<customers|restaurants|orders|deliveries|notifications>/...` — the same
+paths and request/response bodies each backend service already documents, fronted by the gateway.
+A request with no (or an invalid) `Authorization: Bearer <token>` header gets a `401` immediately,
+before any route is even resolved.
 
 ### Endpoints it exposes
 | Route predicate | Resolves to |
@@ -103,6 +112,7 @@ route is even resolved.
 | `/api/customers/**` | `lb://customer-service` |
 | `/api/restaurants/**` | `lb://restaurant-service` |
 | `/api/deliveries/**` | `lb://delivery-service` |
+| `/api/notifications/**` | `lb://notification-service` |
 
 `/actuator/health` is the one unauthenticated exception.
 

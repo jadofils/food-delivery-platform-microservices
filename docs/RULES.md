@@ -36,14 +36,27 @@ of these is not done, regardless of what its acceptance criteria say.
 
 | Service | Responsibility | Datastore | Port |
 |---|---|---|---|
-| `config-server` | Centralized externalized configuration for every other service | — | 8888 |
-| `discovery-server` | Eureka service registry | — | 8761 |
-| `api-gateway` | Single entry point: routing, JWT validation, rate limiting | — | 8080 |
-| `customer-service` | Customer profiles, delivery addresses | `customer_db` (Postgres) | 8082 |
-| `restaurant-service` | Restaurants, menus, menu items | `restaurant_db` (Postgres) | 8083 |
-| `order-service` | Order placement, order lifecycle | `order_db` (Postgres) | 8084 |
-| `delivery-service` | Delivery assignment and tracking | `delivery_db` (Postgres) | 8085 |
-| `notification-service` | Consumes domain events, dispatches notifications, persists notification/audit log | `notification_db` (MongoDB) | 8086 |
+| `config-server` | Centralized externalized configuration for every other service | — | 8888 (fixed) |
+| `discovery-server` | Eureka service registry | — | 8761 (fixed) |
+| `api-gateway` | Single entry point: routing, JWT validation, rate limiting | — | 8080 (fixed) |
+| `customer-service` | Customer profiles, delivery addresses | `customer_db` (Postgres) | dynamic |
+| `restaurant-service` | Restaurants, menus, menu items | `restaurant_db` (Postgres) | dynamic |
+| `order-service` | Order placement, order lifecycle | `order_db` (Postgres) | dynamic |
+| `delivery-service` | Delivery assignment and tracking | `delivery_db` (Postgres) | dynamic |
+| `notification-service` | Consumes domain events, dispatches notifications, persists notification/audit log | `notification_db` (MongoDB) | dynamic |
+
+**Fixed vs. dynamic ports:** `config-server`, `discovery-server`, and `api-gateway` are
+infrastructure with a well-known address every other component bootstraps from or routes through —
+they keep a fixed port. Every domain service (`customer-`/`restaurant-`/`order-`/`delivery-`/
+`notification-service`) sets `server.port=0` (OS-assigned) and is reached exclusively through
+`api-gateway`'s Eureka-resolved `lb://` routing, or another service's own Feign client, same
+mechanism — never a hardcoded `localhost:<port>`. This is what actually makes horizontal scaling
+(factor 8) possible on a single developer machine: two instances of the same service can register
+side by side under two different OS-assigned ports with zero config, each individually
+load-balanced. A domain service's current port is discoverable only via Eureka's own registry
+(`GET http://localhost:8761/eureka/apps/<SERVICE-NAME>`) — there is deliberately no other way to
+find it, which is the point: nothing outside the platform should ever depend on a domain service's
+port being any particular value, or being stable across a restart.
 
 Port 8081 is retired, not reassigned — it belonged to the now-retired `identity-service` (see
 `docs/decisions/`; Keycloak owns identity now, on its own port, listed below). Left as a gap

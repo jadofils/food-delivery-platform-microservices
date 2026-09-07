@@ -2,9 +2,11 @@
 
 ## Responsibility
 Single entry point for all external traffic: routing, JWT validation, and rate limiting (RULES.md
-§2). It routes `/api/customers/**`, `/api/restaurants/**`, `/api/orders/**`, and
-`/api/deliveries/**` to the corresponding backend services via Eureka load-balanced (`lb://`)
-URIs (RULES.md §6; ReadMe.md Epic 3, user story 3.2).
+§2). It routes `/api/customers/**`, `/api/restaurants/**`, `/api/orders/**`, `/api/deliveries/**`,
+and `/api/notifications/**` to the corresponding backend services via Eureka load-balanced
+(`lb://`) URIs (RULES.md §6; ReadMe.md Epic 3, user story 3.2) — the only way to reach any of them
+at all now that every domain service binds to an OS-assigned port (`server.port=0`) rather than a
+fixed one (RULES.md §2).
 
 ## Why it's a separate service
 Centralized routing, authentication, and rate limiting are cross-cutting edge concerns that apply
@@ -34,9 +36,7 @@ document themselves.
 | `/api/customers/**` | `lb://customer-service` | |
 | `/api/restaurants/**` | `lb://restaurant-service` | |
 | `/api/deliveries/**` | `lb://delivery-service` | Originally Sprint 5 scope, blocked on this service not existing yet — added now that it does. |
-
-`/api/notifications/**` is a known, deliberate gap: no route exists yet, since neither RULES.md §2
-nor SPRINTS.md ever specified one — `notification-service` is reached directly today.
+| `/api/notifications/**` | `lb://notification-service` | Not part of the original Sprint 4/5 route table (RULES.md §2/SPRINTS.md never specified one) — added once every domain service moved to a dynamic port, since without it `notification-service` would have no stable address left at all, direct or otherwise. |
 
 - **JWT validation at the edge** (`SecurityConfig`, RULES.md §8): every request is authenticated
   before a route is even resolved (except `/actuator/health`) — signature and expiry checked
@@ -57,6 +57,11 @@ nor SPRINTS.md ever specified one — `notification-service` is reached directly
   (`RateLimiterConfig`), so the limit is per customer, not per shared egress IP.
 - Ties to ReadMe.md Epic 3, user story 3.2 (single entry point, centralized routing,
   authentication, rate limiting).
+- **Horizontal scaling, verified live**: with every domain service now on `server.port=0`, two
+  instances of the same service can run side by side on one machine with zero config — each
+  registers under its own OS-assigned port, and Spring Cloud LoadBalancer's default round-robin
+  strategy spreads gateway-routed requests across both automatically (RULES.md §1 factor 8). This
+  is the actual payoff of the dynamic-port change, not just a side effect of it.
 
 **Known gap:** a `429` response body is empty today, not shaped as `ApiErrorResponse` — Spring
 Cloud Gateway's `RedisRateLimiter` writes that status directly rather than raising an exception the
@@ -77,11 +82,12 @@ yet done.
   (rate-limit counters, RULES.md §12). It has no Feign clients of its own and publishes/consumes no
   RabbitMQ events. **Not yet wired:** `config-server` integration — same documented scope cut as
   every other service.
-- **Depended on by:** every external client (browser, Postman, curl) — it is the sole intended
-  entry point per RULES.md §8 and ReadMe.md's target architecture, though today every domain
-  service still also accepts direct calls on its own port (nothing currently enforces
-  gateway-only access — RULES.md doesn't call for that, only for the gateway to exist as an
-  option).
+- **Depended on by:** every external client (browser, Postman, curl) — it is the sole *practical*
+  entry point now, not just the intended one: every domain service's own port is OS-assigned
+  (RULES.md §2), so there is no stable direct address left to call even if something wanted to
+  bypass the gateway. Nothing technically prevents calling a domain service's actual current port
+  directly (found via Eureka) — RULES.md never added an enforcement mechanism for gateway-only
+  access — but there's no longer a *convenient* way to do so, which was the point.
 
 ## Delivered in
 Sprint 4 — "API Gateway & security edge" (SPRINTS.md): routing to customers/restaurants/orders,
@@ -111,8 +117,8 @@ each other worked fine, but `api-gateway`'s first routed request failed with
 advertises a plain IP instead.
 
 ### How to access it
-`http://localhost:8080/api/<customers|restaurants|orders|deliveries>/...` — same paths and bodies
-each backend service already documents, just fronted by the gateway; add
+`http://localhost:8080/api/<customers|restaurants|orders|deliveries|notifications>/...` — same
+paths and bodies each backend service already documents, just fronted by the gateway; add
 `Authorization: Bearer <token>` (see `credentials.md`) or get a `401` immediately.
 
 ### Endpoints it exposes

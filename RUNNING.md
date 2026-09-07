@@ -22,15 +22,27 @@ cover that.
 | `redis` | Docker | `fdp-redis` | 6379 (or `REDIS_PORT` — see Troubleshooting if 6379 is already taken on your machine) | Infra — live, in real use by `restaurant-service` (caching) |
 | `keycloak` | Docker | `fdp-keycloak` | 8180 | Infra — live, identity provider |
 | `zipkin` | Docker | `fdp-zipkin` | 9411 | Infra — live, in real use by all five domain services (distributed tracing) |
-| `config-server` | Maven (`spring-boot:run`) | `config-server` | 8888 | **Implemented** |
-| `discovery-server` | Maven | `discovery-server` | 8761 | **Implemented** |
-| `customer-service` | Maven | `customer-service` | 8082 | **Implemented** (needs `postgres` + `keycloak`) |
-| `restaurant-service` | Maven | `restaurant-service` | 8083 | **Implemented** (needs `postgres`, `keycloak`, `redis`) |
-| `order-service` | Maven | `order-service` | 8084 | **Implemented** (needs `postgres`, `keycloak`, `rabbitmq`, `discovery-server`, `customer-service`, `restaurant-service`) |
-| `delivery-service` | Maven | `delivery-service` | 8085 | **Implemented** (needs `postgres`, `keycloak`, `rabbitmq`, `discovery-server`; place an order via `order-service` to generate data) |
-| `notification-service` | Maven | `notification-service` | 8086 | **Implemented** (needs `mongodb`, `keycloak`, `rabbitmq`, `discovery-server`; place an order via `order-service` to generate data) |
-| `api-gateway` | Maven | `api-gateway` | 8080 | **Implemented** (needs `discovery-server`, `keycloak`, `redis`; routes to whichever of the four domain services are actually running) |
+| `config-server` | Maven (`spring-boot:run`) | `config-server` | 8888 (fixed) | **Implemented** |
+| `discovery-server` | Maven | `discovery-server` | 8761 (fixed) | **Implemented** |
+| `customer-service` | Maven | `customer-service` | dynamic — see below | **Implemented** (needs `postgres` + `keycloak`) |
+| `restaurant-service` | Maven | `restaurant-service` | dynamic — see below | **Implemented** (needs `postgres`, `keycloak`, `redis`) |
+| `order-service` | Maven | `order-service` | dynamic — see below | **Implemented** (needs `postgres`, `keycloak`, `rabbitmq`, `discovery-server`, `customer-service`, `restaurant-service`) |
+| `delivery-service` | Maven | `delivery-service` | dynamic — see below | **Implemented** (needs `postgres`, `keycloak`, `rabbitmq`, `discovery-server`; place an order via `order-service` to generate data) |
+| `notification-service` | Maven | `notification-service` | dynamic — see below | **Implemented** (needs `mongodb`, `keycloak`, `rabbitmq`, `discovery-server`; place an order via `order-service` to generate data) |
+| `api-gateway` | Maven | `api-gateway` | 8080 (fixed) | **Implemented** (needs `discovery-server`, `keycloak`, `redis`; routes to whichever of the five domain services are actually running) |
 | `common` | — | — | — | Shared library, not a runnable service |
+
+**"dynamic — see below":** every domain service sets `server.port=0` (OS-assigned) — the only
+stable address for reaching one is `api-gateway` on `8080` (`docs/RULES.md` §2). This is
+deliberate, not a gap: it's what lets more than one instance of the same service run on this same
+machine at once (see "I want to see horizontal scaling for myself" below), which a fixed port
+would make impossible. If you need a domain service's *actual* current port for something the
+gateway doesn't cover yet (its own Swagger UI — see that section below), query Eureka directly:
+```bash
+curl -s http://localhost:8761/eureka/apps/CUSTOMER-SERVICE -H "Accept: application/json" | grep -o '"port":{[^}]*}'
+```
+(swap the service name; Eureka app names are upper-cased). Startup logs also print the actual
+bound port directly (`Tomcat started on port <N>`).
 
 ---
 
@@ -169,15 +181,19 @@ java -jar customer-service/target/customer-service-0.0.1-SNAPSHOT.jar
 ```
 
 ### Stopping a backgrounded/jar-run service
-Find what's listening on its port, then stop that process:
+`config-server`/`discovery-server`/`api-gateway` are on their fixed ports; find what's listening,
+then stop that process:
 ```powershell
-Get-NetTCPConnection -LocalPort 8082 | Select-Object -ExpandProperty OwningProcess
+Get-NetTCPConnection -LocalPort 8080 | Select-Object -ExpandProperty OwningProcess
 Stop-Process -Id <pid> -Force
 ```
 ```bash
-netstat -ano | grep ":8082" | grep LISTENING     # last column is the PID
+netstat -ano | grep ":8080" | grep LISTENING     # last column is the PID
 taskkill //F //PID <pid>
 ```
+A domain service's port is dynamic — look it up via Eureka first (see the Quick reference table
+above), then use the exact same commands with that port instead. Alternatively, its own startup
+log line (`Tomcat started on port <N>`) already has it, if that terminal is still visible.
 
 ---
 
@@ -187,15 +203,24 @@ Only services with real business endpoints have Swagger UI — `config-server` a
 `discovery-server` are pure infrastructure with no `springdoc-openapi` dependency, so there's
 nothing to browse there beyond what's listed below instead.
 
-| Service | Swagger UI | Raw OpenAPI JSON | Auth needed to view docs? |
-|---|---|---|---|
-| `customer-service` | http://localhost:8082/swagger-ui/index.html | http://localhost:8082/v3/api-docs | No — the docs page itself is `permitAll()`; you only need a token to click **Try it out** on an endpoint |
-| `restaurant-service` | http://localhost:8083/swagger-ui/index.html | http://localhost:8083/v3/api-docs | No, same as above |
-| `order-service` | http://localhost:8084/swagger-ui/index.html | http://localhost:8084/v3/api-docs | No, same as above |
-| `delivery-service` | http://localhost:8085/swagger-ui/index.html | http://localhost:8085/v3/api-docs | No, same as above |
-| `notification-service` | http://localhost:8086/swagger-ui/index.html | http://localhost:8086/v3/api-docs | No, same as above |
-| `discovery-server` | — (no Swagger) | — | Eureka's own dashboard instead: http://localhost:8761 |
-| `config-server` | — (no Swagger) | — | It's a config-serving REST API, not a documented business API — see `curl` examples in `docs/services/config-server.md` |
+**A known gap, not an oversight:** `api-gateway` has no route for `/swagger-ui/**` or
+`/v3/api-docs/**` (only `/api/**` paths are routed — see `docs/services/api-gateway.md`), and each
+domain service's own port is now dynamic (see "Quick reference" above), so there is no fixed URL
+to hand out for these anymore. Look the current port up via Eureka first, then browse it directly:
+```bash
+curl -s http://localhost:8761/eureka/apps/CUSTOMER-SERVICE -H "Accept: application/json" | grep -o '"port":{[^}]*}'
+# then: http://localhost:<that port>/swagger-ui/index.html
+```
+
+| Service | Docs path (append to `http://localhost:<port>` once looked up) | Auth needed to view docs? |
+|---|---|---|
+| `customer-service` | `/swagger-ui/index.html`, `/v3/api-docs` | No — the docs page itself is `permitAll()`; you only need a token to click **Try it out** on an endpoint |
+| `restaurant-service` | `/swagger-ui/index.html`, `/v3/api-docs` | No, same as above |
+| `order-service` | `/swagger-ui/index.html`, `/v3/api-docs` | No, same as above |
+| `delivery-service` | `/swagger-ui/index.html`, `/v3/api-docs` | No, same as above |
+| `notification-service` | `/swagger-ui/index.html`, `/v3/api-docs` | No, same as above |
+| `discovery-server` | — (no Swagger) | Eureka's own dashboard instead: http://localhost:8761 |
+| `config-server` | — (no Swagger) | It's a config-serving REST API, not a documented business API — see `curl` examples in `docs/services/config-server.md` |
 
 To call a real endpoint from Swagger UI once it's open: click **Authorize** (top right, padlock
 icon), paste a raw JWT (no `Bearer ` prefix — Swagger adds that itself), **Authorize**, **Close**.
@@ -280,10 +305,12 @@ sleep 3
 
 ### "I want to see the resilience/circuit-breaker story for myself"
 ```bash
-netstat -ano | grep ":8083" | grep LISTENING     # find restaurant-service's pid
-taskkill //F //PID <pid>                         # stop it
-# now place an order via Postman/curl -- expect a clean 503 in a few seconds, not a hang
-./mvnw -pl restaurant-service -am spring-boot:run   # bring it back
+curl -s http://localhost:8761/eureka/apps/RESTAURANT-SERVICE -H "Accept: application/json" | grep -o '"port":{[^}]*}'
+netstat -ano | grep ":<that port>" | grep LISTENING     # find restaurant-service's pid
+taskkill //F //PID <pid>                                # stop it
+# now place an order via Postman/curl (through api-gateway, or order-service directly) -- expect a
+# clean 503 in a few seconds, not a hang
+./mvnw -pl restaurant-service -am spring-boot:run   # bring it back (registers under a new port)
 # wait ~10s (the circuit breaker's wait-duration-in-open-state), then place another order --
 # it succeeds again on its own, no restart of order-service needed
 ```
@@ -294,9 +321,11 @@ Place an order via Postman/curl, then open `http://localhost:15672` (login `fdp`
 there.
 
 ### "I want to see the async event consume + MongoDB story for myself"
-With `notification-service` also running, place (and optionally cancel) an order via Postman/curl,
-then call `GET http://localhost:8086/api/notifications/me` with the same customer's token — a real
-notification record is there within a couple of seconds, persisted in MongoDB's `notification_db`
+With `notification-service` and `api-gateway` also running, place (and optionally cancel) an order
+via Postman/curl, then call `GET http://localhost:8080/api/notifications/me` (through the gateway
+— `notification-service`'s own port is dynamic, see "Quick reference" above) with the same
+customer's token — a real notification record is there within a couple of seconds, persisted in
+MongoDB's `notification_db`
 (`mongosh "mongodb://fdp:fdp@localhost:27017/notification_db?authSource=admin"` →
 `db.notifications.find()` to see it directly). To see the idempotency guard hold up, publish the
 exact same event twice from RabbitMQ's management UI (**Queues →
@@ -337,8 +366,9 @@ timeline. Trigger any validation error (e.g. place an order with `"items": []`) 
 response's `traceId` field — it's a real trace ID now, directly open-able in Zipkin.
 
 ### "I want to see the distributed cache for myself"
-With `restaurant-service` running, `GET /api/restaurants/{id}` via Postman/curl twice — both return
-the same body, but check `docker exec fdp-redis redis-cli -a fdp keys '*'` (add `-p <port>` if you
+With `restaurant-service` and `api-gateway` running, `GET http://localhost:8080/api/restaurants/{id}`
+via Postman/curl twice — both return the same body, but check
+`docker exec fdp-redis redis-cli -a fdp keys '*'` (add `-p <port>` if you
 overrode `REDIS_PORT`) after the first call and a new key (`restaurant-service:restaurant::{id}`)
 is already there before the second call even runs. `redis-cli ... ttl restaurant-service:restaurant::{id}`
 shows it counting down from two minutes. `PUT /api/restaurants/me` (as the owning
@@ -347,15 +377,31 @@ waiting out the TTL; the next `GET` repopulates it with the new value.
 
 ### "I want to see api-gateway routing and rate limiting for myself"
 With `discovery-server`, `keycloak`, `redis`, and at least `customer-service`/`restaurant-service`/
-`order-service`/`delivery-service` running, call the *same* paths through `api-gateway` on `8080`
-instead of each service's own port — `GET http://localhost:8080/api/customers/me`,
-`.../api/restaurants`, `.../api/orders/me`, `.../api/deliveries/by-order/{orderId}`, same bearer
-token, same bodies. With no token at all, every one of those gets a `401` immediately, before the
-gateway even attempts to resolve a route. To see the rate limiter trip, fire a burst of concurrent
+`order-service`/`delivery-service`/`notification-service` running, call the *same* paths through
+`api-gateway` on `8080` instead of each service's own (now dynamic, unadvertised) port — `GET
+http://localhost:8080/api/customers/me`, `.../api/restaurants`, `.../api/orders/me`,
+`.../api/deliveries/by-order/{orderId}`, `.../api/notifications/me`, same bearer token, same
+bodies. With no token at all, every one of those gets a `401` immediately, before the gateway even
+attempts to resolve a route. To see the rate limiter trip, fire a burst of concurrent
 `POST /api/orders/me` calls through the gateway as the same customer (bash: `for i in $(seq 1 20);
 do curl ... & done; wait`) — burst capacity is 10, so several of the 20 come back `429 Too Many
 Requests` once it's exhausted; check `X-RateLimit-Remaining` on any single successful response to
 see the bucket draining in real time.
+
+### "I want to see horizontal scaling for myself"
+Start a *second* instance of any domain service alongside the first — same jar, same command, no
+config changes needed, since `server.port=0` means the second instance can't collide with the
+first's port the way it would have under the old fixed-port setup:
+```bash
+java -jar customer-service/target/customer-service-0.0.1-SNAPSHOT.jar > /tmp/customer-service-2.log 2>&1 &
+```
+`GET http://localhost:8761/eureka/apps/CUSTOMER-SERVICE -H "Accept: application/json"` now shows
+two `<instance>` entries under one application, each with its own port. Call
+`GET http://localhost:8080/api/customers/me` through the gateway repeatedly — Spring Cloud
+LoadBalancer's default round-robin strategy spreads requests across both instances (compare each
+instance's own log around the same timestamp: only one of the two logs the incoming request per
+call). Stop either instance and the gateway keeps working, routing every subsequent request to
+whichever instance is still up, with no restart of `api-gateway` itself needed.
 
 ### "I only need the databases/broker up, no application code running"
 ```bash
