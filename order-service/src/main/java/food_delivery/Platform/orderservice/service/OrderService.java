@@ -16,6 +16,7 @@ import food_delivery.Platform.common.error.ConflictException;
 import food_delivery.Platform.common.error.ResourceNotFoundException;
 import food_delivery.Platform.common.security.jwt.JwtClaims;
 import food_delivery.Platform.orderservice.client.CustomerServiceGateway;
+import food_delivery.Platform.orderservice.client.DeliveryServiceGateway;
 import food_delivery.Platform.orderservice.client.RestaurantServiceGateway;
 import food_delivery.Platform.orderservice.client.dto.MenuItemValidationResponse;
 import food_delivery.Platform.orderservice.dto.OrderItemRequest;
@@ -37,13 +38,16 @@ public class OrderService {
 	private final OrderRepository orderRepository;
 	private final CustomerServiceGateway customerServiceGateway;
 	private final RestaurantServiceGateway restaurantServiceGateway;
+	private final DeliveryServiceGateway deliveryServiceGateway;
 	private final OrderEventPublisher eventPublisher;
 
 	public OrderService(OrderRepository orderRepository, CustomerServiceGateway customerServiceGateway,
-			RestaurantServiceGateway restaurantServiceGateway, OrderEventPublisher eventPublisher) {
+			RestaurantServiceGateway restaurantServiceGateway, DeliveryServiceGateway deliveryServiceGateway,
+			OrderEventPublisher eventPublisher) {
 		this.orderRepository = orderRepository;
 		this.customerServiceGateway = customerServiceGateway;
 		this.restaurantServiceGateway = restaurantServiceGateway;
+		this.deliveryServiceGateway = deliveryServiceGateway;
 		this.eventPublisher = eventPublisher;
 	}
 
@@ -101,6 +105,17 @@ public class OrderService {
 	@Transactional(readOnly = true)
 	public Order getOwn(Jwt jwt, Long orderId) {
 		return findOwnOrThrow(jwt, orderId);
+	}
+
+	/**
+	 * Best-effort live delivery status for the order-tracking view (RULES.md §6) — {@code null} if
+	 * no assignment exists yet or {@code delivery-service} is unreachable; see
+	 * {@link DeliveryServiceGateway}'s own class comment for why this degrades instead of failing.
+	 * Callers must already own {@code orderId} (this method takes no {@link Jwt} and does no
+	 * ownership check of its own) — call only after {@link #getOwn} has already confirmed it.
+	 */
+	public String getDeliveryStatus(Long orderId) {
+		return deliveryServiceGateway.getStatusByOrderId(orderId);
 	}
 
 	@Transactional

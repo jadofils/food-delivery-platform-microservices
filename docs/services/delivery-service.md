@@ -35,11 +35,15 @@ migrated with Flyway under `src/main/resources/db/migration`, additive and forwa
 | `POST /api/deliveries/{id}/claim` | `delivery:status:update` | Self-assigns the caller as the agent. `409 Conflict` if not currently `PENDING`. |
 | `POST /api/deliveries/{id}/pickup` | `delivery:status:update` | `ASSIGNED` → `PICKED_UP`. `403 Forbidden` if the caller isn't the assigned agent; `409 Conflict` on the wrong starting status. |
 | `POST /api/deliveries/{id}/deliver` | `delivery:status:update` | `PICKED_UP` → `DELIVERED`. Same ownership/status checks as pickup. |
+| `GET /api/deliveries/by-order/{orderId}` | none — authenticated only | Self-service: the delivery status for one of the caller's own orders. No `delivery:read` required — a plain `CUSTOMER` holds neither `delivery:read` nor `delivery:status:update` (see below), so this route is authentication-plus-ownership-check instead, the same "no dedicated permission exists" pattern `order-service`'s own `/me` routes and `notification-service`'s `/me` route already use: `404`, not `403`, when the caller isn't the order's customer. `order-service` calls this (relaying the customer's own token) to enrich its own `GET /api/orders/me/{id}` with live order tracking. |
 
 Only `ADMIN` and `DELIVERY_AGENT` hold `delivery:read`/`delivery:status:update`
-(`docker/keycloak/fdp-realm.json`) — there is deliberately no customer-facing "check my delivery
-status" endpoint in this build, since no distinct permission exists to gate one on without inventing
-one (the same scope decision `order-service` made for admin-wide order listing).
+(`docker/keycloak/fdp-realm.json`) — there is deliberately no customer-facing route that *browses*
+deliveries the way an agent does, since no distinct "read own delivery" permission exists to gate
+one on without inventing one (the same scope decision `order-service` made for admin-wide order
+listing). `GET /api/deliveries/by-order/{orderId}` above is not that route — it's a narrow,
+self-service, ownership-checked lookup by order id, purpose-built for `order-service`'s order-
+tracking feature, not a general delivery-browsing capability for customers.
 
 A Postman collection covering every row above, plus the event-driven creation/notification story,
 is checked in at `postman/FDP-delivery-service.postman_collection.json` (18 requests, 25
@@ -77,14 +81,22 @@ real order-placement trace spanning all five domain services plus RabbitMQ plus 
 trace ID — `order-service → customer-service`, `order-service → restaurant-service`,
 `order-service → rabbitmq → delivery-service`, `order-service → rabbitmq → notification-service`.
 
+Order tracking verified live end to end: a customer's `GET /api/orders/me/{id}` on `order-service`
+showed `deliveryStatus` moving through `PENDING` → `ASSIGNED` → `PICKED_UP` → `DELIVERED` in real
+time as an agent worked the same delivery via the endpoints above, and correctly degraded to
+`null` (order still fully viewable) with `delivery-service` stopped mid-run.
+
 ## Depends on / depended on by
 - **Depends on:** `discovery-server` (Eureka client registration — verified live), its own
   `delivery_db` Postgres instance, and RabbitMQ (both consume and publish). **Not yet wired:**
   pulling shared config from `config-server` — the same documented scope cut as every other
   service.
 - **Depended on by:** `notification-service` consumes this service's `DeliveryStatusUpdatedEvent` —
-  done and verified live. `api-gateway` will route `/api/deliveries/**` to it (Sprint 4, not built
-  yet).
+  done and verified live. `order-service` calls `GET /api/deliveries/by-order/{orderId}`
+  synchronously (via OpenFeign, resolved through Eureka) to enrich its own order-tracking view —
+  done and verified live; see `docs/services/order-service.md`'s "Order tracking" section for why
+  that call is deliberately non-blocking. `api-gateway` will route `/api/deliveries/**` to it
+  (Sprint 4, not built yet).
 
 ## Delivered in
 Sprint 5 — "Delivery, events, and notifications" (SPRINTS.md), the half that remained after

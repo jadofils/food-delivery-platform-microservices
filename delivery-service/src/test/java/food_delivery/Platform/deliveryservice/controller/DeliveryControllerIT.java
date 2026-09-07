@@ -58,7 +58,11 @@ class DeliveryControllerIT extends AbstractIntegrationTest {
 	}
 
 	private Long placeOrderAndWaitForAssignment(long orderId) throws Exception {
-		OrderPlacedEvent event = new OrderPlacedEvent(UUID.randomUUID(), orderId, "kc-delivery-target-customer", 1L,
+		return placeOrderAndWaitForAssignment(orderId, "kc-delivery-target-customer");
+	}
+
+	private Long placeOrderAndWaitForAssignment(long orderId, String customerKeycloakId) throws Exception {
+		OrderPlacedEvent event = new OrderPlacedEvent(UUID.randomUUID(), orderId, customerKeycloakId, 1L,
 				1L, new BigDecimal("5.50"),
 				List.of(new OrderPlacedEvent.Item(1L, "Brochette", new BigDecimal("5.50"), 1)), Instant.now());
 		rabbitTemplate.convertAndSend("fdp.order-events", "order.placed", event);
@@ -146,6 +150,34 @@ class DeliveryControllerIT extends AbstractIntegrationTest {
 		mockMvc.perform(get("/api/deliveries/unassigned").with(agent("kc-agent-browsing")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.content").isArray());
+	}
+
+	@Test
+	void getByOrderId_ownCustomer_seesLiveDeliveryStatus() throws Exception {
+		long orderId = 6007L;
+		String customerSub = "kc-tracking-owner";
+		placeOrderAndWaitForAssignment(orderId, customerSub);
+
+		mockMvc.perform(get("/api/deliveries/by-order/" + orderId).with(customer(customerSub)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("PENDING"));
+	}
+
+	@Test
+	void getByOrderId_anotherCustomer_isRejectedWith404() throws Exception {
+		long orderId = 6008L;
+		placeOrderAndWaitForAssignment(orderId, "kc-tracking-owner-2");
+
+		// Same "don't leak whether the resource exists" pattern as order-service's own /me routes --
+		// a customer who isn't the order's owner gets 404, not 403.
+		mockMvc.perform(get("/api/deliveries/by-order/" + orderId).with(customer("kc-not-the-owner")))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void getByOrderId_noAssignmentYet_isNotFound() throws Exception {
+		mockMvc.perform(get("/api/deliveries/by-order/999999").with(customer("kc-tracking-owner-3")))
+				.andExpect(status().isNotFound());
 	}
 
 	private void waitUntil(BooleanSupplier condition) throws InterruptedException {

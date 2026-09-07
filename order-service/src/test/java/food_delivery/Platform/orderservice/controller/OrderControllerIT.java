@@ -27,6 +27,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import food_delivery.Platform.common.event.OrderPlacedEvent;
 import food_delivery.Platform.orderservice.AbstractIntegrationTest;
 import food_delivery.Platform.orderservice.client.CustomerServiceGateway;
+import food_delivery.Platform.orderservice.client.DeliveryServiceGateway;
 import food_delivery.Platform.orderservice.client.RestaurantServiceGateway;
 import food_delivery.Platform.orderservice.client.dto.CustomerProfileResponse;
 import food_delivery.Platform.orderservice.client.dto.DeliveryAddressResponse;
@@ -56,6 +57,9 @@ class OrderControllerIT extends AbstractIntegrationTest {
 
 	@MockitoBean
 	private RestaurantServiceGateway restaurantServiceGateway;
+
+	@MockitoBean
+	private DeliveryServiceGateway deliveryServiceGateway;
 
 	private static JwtRequestPostProcessor customer(String sub) {
 		return jwt().jwt(builder -> builder.subject(sub).claim("email", sub + "@fdp.test"))
@@ -92,6 +96,15 @@ class OrderControllerIT extends AbstractIntegrationTest {
 	@Test
 	void placeOrder_success_snapshotsPriceAndPublishesEvent() throws Exception {
 		stubHappyPath();
+
+		// Every other test in this class that places an order also publishes onto this same shared
+		// order-events.inspection queue (RabbitConfig's own class comment) without draining it --
+		// purge first so a leftover message from another test can never be mistaken for this one's
+		// own event, regardless of test execution order.
+		rabbitTemplate.execute(channel -> {
+			channel.queuePurge("order-events.inspection");
+			return null;
+		});
 
 		String body = mockMvc.perform(post("/api/orders/me")
 						.with(customer("kc-order-1"))
@@ -205,6 +218,46 @@ class OrderControllerIT extends AbstractIntegrationTest {
 
 		mockMvc.perform(get("/api/orders/me/" + orderId).with(customer("kc-order-intruder")))
 				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void getOwnOrder_includesLiveDeliveryStatusWhenAvailable() throws Exception {
+		stubHappyPath();
+		String sub = "kc-order-tracking-1";
+		String body = mockMvc.perform(post("/api/orders/me")
+						.with(customer(sub))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(PLACE_ORDER_JSON))
+				.andExpect(status().isCreated())
+				.andReturn().getResponse().getContentAsString();
+		String orderId = extractId(body);
+
+		when(deliveryServiceGateway.getStatusByOrderId(Long.valueOf(orderId))).thenReturn("PICKED_UP");
+
+		mockMvc.perform(get("/api/orders/me/" + orderId).with(customer(sub)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.deliveryStatus").value("PICKED_UP"));
+	}
+
+	@Test
+	void getOwnOrder_deliveryStatusIsNull_whenNoAssignmentYetOrDeliveryServiceUnavailable() throws Exception {
+		stubHappyPath();
+		String sub = "kc-order-tracking-2";
+		String body = mockMvc.perform(post("/api/orders/me")
+						.with(customer(sub))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(PLACE_ORDER_JSON))
+				.andExpect(status().isCreated())
+				.andReturn().getResponse().getContentAsString();
+		String orderId = extractId(body);
+
+		// deliveryServiceGateway is left unstubbed -- Mockito's default null return is exactly what
+		// DeliveryServiceGateway itself returns for "no assignment yet" or "unreachable" (see its
+		// own class comment) -- the order itself must still be fully viewable either way.
+		mockMvc.perform(get("/api/orders/me/" + orderId).with(customer(sub)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("PLACED"))
+				.andExpect(jsonPath("$.deliveryStatus").value(org.hamcrest.Matchers.nullValue()));
 	}
 
 	@Test

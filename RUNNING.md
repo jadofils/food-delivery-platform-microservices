@@ -316,6 +316,19 @@ synchronous call from `order-service`. `POST /api/deliveries/{id}/claim`, then `
 records for the same order. Cancel a *different* order before claiming its delivery, and its
 assignment flips straight to `CANCELLED` and drops out of `/unassigned`.
 
+### "I want to see order tracking (order-service + delivery-service) for myself"
+Place an order via Postman/curl as the customer, then immediately `GET
+{{orderServiceUrl}}/api/orders/me/{id}` with the same customer's token — `deliveryStatus` is either
+`null` (delivery-service's consumer hasn't caught up yet) or already `"PENDING"`. As
+`delivery-agent@fdp.test`, `claim` → `pickup` → `deliver` that same delivery (see the previous
+recipe) and re-`GET` the order after each step — `deliveryStatus` moves `PENDING` → `ASSIGNED` →
+`PICKED_UP` → `DELIVERED` in lockstep, with no code in `order-service` polling or subscribing to
+anything; it's a live Feign call on every request. Stop `delivery-service` and `GET` the order
+again — still `200`, `deliveryStatus` back to `null`, the order itself unaffected (RULES.md §7).
+`delivery-service`'s own `GET /api/deliveries/by-order/{orderId}` (same customer token) is the
+self-service endpoint `order-service` calls under the hood — call it directly to see the same
+thing without going through `order-service` at all.
+
 ### "I want to see the distributed trace for myself"
 With all four built services and `zipkin` running, place a real order via Postman/curl, then open
 `http://localhost:9411`, search for service `order-service`, and open the most recent trace for

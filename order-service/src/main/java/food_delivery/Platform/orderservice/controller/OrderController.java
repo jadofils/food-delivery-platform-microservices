@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import food_delivery.Platform.orderservice.dto.OrderResponse;
 import food_delivery.Platform.orderservice.dto.OrderSummaryResponse;
 import food_delivery.Platform.orderservice.dto.PlaceOrderRequest;
+import food_delivery.Platform.orderservice.entity.Order;
 import food_delivery.Platform.orderservice.service.OrderService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -54,11 +55,13 @@ public class OrderController {
 		return orderService.listOwn(jwt, pageable).map(OrderSummaryResponse::from);
 	}
 
-	@Operation(summary = "Get one of the caller's own orders")
+	@Operation(summary = "Get one of the caller's own orders, including live delivery status (order tracking) when available")
 	@PreAuthorize("hasAuthority('order:read')")
 	@GetMapping("/{id}")
 	public OrderResponse get(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id) {
-		return OrderResponse.from(orderService.getOwn(jwt, id));
+		Order order = orderService.getOwn(jwt, id);
+		String deliveryStatus = orderService.getDeliveryStatus(order.getId());
+		return OrderResponse.from(order, deliveryStatus);
 	}
 
 	@Operation(summary = "Cancel one of the caller's own orders — publishes OrderCancelledEvent")

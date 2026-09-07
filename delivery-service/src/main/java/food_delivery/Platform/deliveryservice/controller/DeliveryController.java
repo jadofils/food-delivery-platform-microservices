@@ -24,6 +24,13 @@ import io.swagger.v3.oas.annotations.tags.Tag;
  * ownership-scoped read permission exists, so {@code GET /{id}} is readable by anyone holding
  * {@code delivery:read}, the same "broad read permission = full browsing rights" pattern
  * {@code restaurant-service}'s public browsing endpoints already use.
+ *
+ * <p>{@code GET /by-order/{orderId}} is the one exception: a plain customer has neither
+ * permission, so it's self-service instead — authenticated-only, ownership-checked against
+ * {@code customerKeycloakId} inside {@link DeliveryAssignmentService}, the same "no dedicated
+ * permission exists, so authentication plus an ownership check is the security boundary" pattern
+ * every other service's own {@code /me} routes already use. {@code order-service} calls this (with
+ * the customer's own relayed token) to show delivery status alongside an order's own details.
  */
 @RestController
 @RequestMapping("/api/deliveries")
@@ -41,6 +48,12 @@ public class DeliveryController {
 	@GetMapping("/{id}")
 	public DeliveryAssignmentResponse getById(@PathVariable Long id) {
 		return DeliveryAssignmentResponse.from(deliveryAssignmentService.getById(id));
+	}
+
+	@Operation(summary = "Self-service: the delivery status for one of the caller's own orders")
+	@GetMapping("/by-order/{orderId}")
+	public DeliveryAssignmentResponse getByOrderId(@AuthenticationPrincipal Jwt jwt, @PathVariable Long orderId) {
+		return DeliveryAssignmentResponse.from(deliveryAssignmentService.getByOrderIdForCustomer(jwt, orderId));
 	}
 
 	@Operation(summary = "The caller's own claimed/in-progress deliveries")

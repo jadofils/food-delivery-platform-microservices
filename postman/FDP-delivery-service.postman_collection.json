@@ -384,6 +384,27 @@
 						"header": [{ "key": "Authorization", "value": "Bearer {{deliveryAgentToken}}" }],
 						"url": { "raw": "{{deliveryServiceUrl}}/api/deliveries/me", "host": ["{{deliveryServiceUrl}}"], "path": ["api", "deliveries", "me"] }
 					}
+				},
+				{
+					"name": "Customer Order Tracking (self-service by-order lookup)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));",
+									"pm.test('now DELIVERED', () => pm.expect(pm.response.json().status).to.eql('DELIVERED'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+						"url": { "raw": "{{deliveryServiceUrl}}/api/deliveries/by-order/{{orderId}}", "host": ["{{deliveryServiceUrl}}"], "path": ["api", "deliveries", "by-order", "{{orderId}}"] },
+						"description": "No delivery:read needed -- the customer who placed the order can look up its delivery status by order id, ownership-checked against their own token. This is exactly what order-service's own GET /api/orders/me/{id} calls under the hood to show deliveryStatus."
+					}
 				}
 			]
 		},
@@ -417,6 +438,21 @@
 						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
 						"url": { "raw": "{{deliveryServiceUrl}}/api/deliveries/{{deliveryId}}", "host": ["{{deliveryServiceUrl}}"], "path": ["api", "deliveries", "{{deliveryId}}"] },
 						"description": "customer@fdp.test's role set doesn't include delivery:read/delivery:status:update -- only ADMIN and DELIVERY_AGENT carry those permissions (docker/keycloak/fdp-realm.json)."
+					}
+				},
+				{
+					"name": "Another Account Cannot Track This Order -> 404",
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('not found -- ownership check, not this order\\'s customer', () => pm.response.to.have.status(404));"] }
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{restaurantOwnerToken}}" }],
+						"url": { "raw": "{{deliveryServiceUrl}}/api/deliveries/by-order/{{orderId}}", "host": ["{{deliveryServiceUrl}}"], "path": ["api", "deliveries", "by-order", "{{orderId}}"] },
+						"description": "by-order/{orderId} needs no delivery:read -- it's authenticated-only, self-service, ownership-checked against the order's own customerKeycloakId. restaurant-owner@fdp.test is authenticated but isn't this order's customer, so it's 404 (not 403) -- the same 'don't leak whether the resource exists' pattern order-service's own /me routes use."
 					}
 				}
 			]
