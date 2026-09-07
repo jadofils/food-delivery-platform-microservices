@@ -2,12 +2,14 @@ package food_delivery.Platform.restaurantservice.service;
 
 import java.util.List;
 
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import food_delivery.Platform.common.error.ResourceNotFoundException;
 import food_delivery.Platform.common.security.jwt.JwtClaims;
+import food_delivery.Platform.restaurantservice.config.CacheConfig;
 import food_delivery.Platform.restaurantservice.dto.MenuItemRequest;
 import food_delivery.Platform.restaurantservice.entity.MenuItem;
 import food_delivery.Platform.restaurantservice.entity.Restaurant;
@@ -40,7 +42,14 @@ public class MenuItemService {
 				.orElseGet(List::of);
 	}
 
+	/**
+	 * Evicts the restaurant's cached menu listing (RULES.md §12) — {@code #result.restaurant.id}
+	 * reads the id off {@code MenuItem.restaurant}, a LAZY {@code @ManyToOne}; Hibernate resolves an
+	 * association's own id from the owning foreign key without needing to actually fetch the parent
+	 * row, so this doesn't force an extra query.
+	 */
 	@Transactional
+	@CacheEvict(cacheNames = CacheConfig.MENU_CACHE, key = "#result.restaurant.id")
 	public MenuItem addForOwner(Jwt jwt, MenuItemRequest request) {
 		Restaurant restaurant = ownerOf(jwt);
 		MenuItem menuItem = new MenuItem(request.name(), request.description(), request.price(), request.category(),
@@ -57,6 +66,7 @@ public class MenuItemService {
 	}
 
 	@Transactional
+	@CacheEvict(cacheNames = CacheConfig.MENU_CACHE, key = "#result.restaurant.id")
 	public MenuItem updateForOwner(Jwt jwt, Long menuItemId, MenuItemRequest request) {
 		MenuItem menuItem = getForOwner(jwt, menuItemId);
 		menuItem.setName(request.name());
@@ -67,11 +77,19 @@ public class MenuItemService {
 		return menuItem;
 	}
 
+	/**
+	 * Returns the now-former owning restaurant's id (rather than {@code void}) purely so
+	 * {@code @CacheEvict} has something to key on — {@code #result} isn't available for a
+	 * {@code void} method. The controller's {@code 204 No Content} response is unaffected; it simply
+	 * doesn't use the return value.
+	 */
 	@Transactional
-	public void deleteForOwner(Jwt jwt, Long menuItemId) {
+	@CacheEvict(cacheNames = CacheConfig.MENU_CACHE, key = "#result")
+	public Long deleteForOwner(Jwt jwt, Long menuItemId) {
 		MenuItem menuItem = getForOwner(jwt, menuItemId);
 		Restaurant restaurant = menuItem.getRestaurant();
 		restaurant.removeMenuItem(menuItem);
+		return restaurant.getId();
 	}
 
 	/** Public browsing — no ownership/JWT involved beyond the route's {@code restaurant:menu:read} gate. */

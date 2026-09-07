@@ -1,5 +1,7 @@
 package food_delivery.Platform.restaurantservice.controller;
 
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import food_delivery.Platform.restaurantservice.config.CacheConfig;
 import food_delivery.Platform.restaurantservice.dto.RestaurantRegistrationRequest;
 import food_delivery.Platform.restaurantservice.dto.RestaurantResponse;
 import food_delivery.Platform.restaurantservice.dto.RestaurantUpdateRequest;
@@ -58,17 +61,33 @@ public class RestaurantController {
 		return RestaurantResponse.from(restaurantService.getOwnProfile(jwt));
 	}
 
+	/**
+	 * Evicts the cached browsing entry (RULES.md §12) so a change is visible immediately rather
+	 * than waiting out {@link CacheConfig}'s TTL. Keyed by {@code #result.id}, evaluated after the
+	 * method returns (the default {@code beforeInvocation = false}) — the id isn't a method
+	 * parameter here (self-service, resolved from the caller's own token, not a path variable).
+	 */
 	@Operation(summary = "Update the caller's own restaurant profile")
 	@PreAuthorize("hasAuthority('restaurant:menu:write')")
 	@PutMapping("/me")
+	@CacheEvict(cacheNames = CacheConfig.RESTAURANT_CACHE, key = "#result.id")
 	public RestaurantResponse updateOwnProfile(@AuthenticationPrincipal Jwt jwt,
 			@Valid @RequestBody RestaurantUpdateRequest request) {
 		return RestaurantResponse.from(restaurantService.updateOwnProfile(jwt, request));
 	}
 
+	/**
+	 * Cached in Redis (RULES.md §12) — read-heavy public browsing, and a restaurant's profile
+	 * changes far less often than it's browsed. Caching the {@code RestaurantResponse} DTO here,
+	 * not the {@code Restaurant} entity in the service layer: the entity isn't {@code Serializable}
+	 * and caching a JPA entity directly risks Hibernate-proxy serialization pitfalls the DTO simply
+	 * doesn't have. {@link #updateOwnProfile} evicts this same entry on a write, so the TTL is a
+	 * staleness ceiling, not the only path to freshness.
+	 */
 	@Operation(summary = "Browse: get any restaurant by id — requires restaurant:menu:read")
 	@PreAuthorize("hasAuthority('restaurant:menu:read')")
 	@GetMapping("/{id}")
+	@Cacheable(cacheNames = CacheConfig.RESTAURANT_CACHE, key = "#id")
 	public RestaurantResponse getById(@PathVariable Long id) {
 		return RestaurantResponse.from(restaurantService.getById(id));
 	}

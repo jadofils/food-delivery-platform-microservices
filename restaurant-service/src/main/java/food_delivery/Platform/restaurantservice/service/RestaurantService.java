@@ -67,7 +67,11 @@ public class RestaurantService {
 		return restaurant;
 	}
 
-	/** Public browsing (any caller with {@code restaurant:menu:read} — includes plain customers). */
+	/**
+	 * Public browsing (any caller with {@code restaurant:menu:read} — includes plain customers).
+	 * Not cached at this layer — see {@code RestaurantController} for why caching lives at the
+	 * DTO-conversion boundary instead of around this raw-entity method.
+	 */
 	@Transactional(readOnly = true)
 	public Restaurant getById(Long id) {
 		return restaurantRepository.findById(id)

@@ -34,9 +34,9 @@ required to view the docs themselves) once the service is running.
 | `GET /api/restaurants/me/menu-items` | `restaurant:menu:write` | Self-service, ownership resolved from the token. |
 | `POST /api/restaurants/me/menu-items` | `restaurant:menu:write` | |
 | `GET`/`PUT`/`DELETE /api/restaurants/me/menu-items/{id}` | `restaurant:menu:write` | 404 (not 403) if the item belongs to a different restaurant — the ownership check is baked into the repository query. |
-| `GET /api/restaurants/{id}` | `restaurant:menu:read` | Public browsing — the seeded `CUSTOMER` demo account holds this permission too, not just owners/admin (see `docker/keycloak/fdp-realm.json`). |
-| `GET /api/restaurants` | `restaurant:menu:read` | Paginated public browsing. |
-| `GET /api/restaurants/{id}/menu-items` | `restaurant:menu:read` | Public browsing of one restaurant's menu — what `order-service` will also call in Sprint 3 to validate items/pricing. |
+| `GET /api/restaurants/{id}` | `restaurant:menu:read` | Public browsing — the seeded `CUSTOMER` demo account holds this permission too, not just owners/admin (see `docker/keycloak/fdp-realm.json`). Cached in Redis (RULES.md §12) — see "Distributed caching" below. |
+| `GET /api/restaurants` | `restaurant:menu:read` | Paginated public browsing. Not cached — page composition (offset/size/sort) makes the key space effectively unbounded, unlike the two single-item lookups below. |
+| `GET /api/restaurants/{id}/menu-items` | `restaurant:menu:read` | Public browsing of one restaurant's menu — also what `order-service` calls via OpenFeign to validate items/pricing before accepting an order. Cached in Redis (RULES.md §12). |
 
 Nothing here is `@Masked` — a restaurant's name/address is public storefront information, not the
 human-readable PII (email, username, phone) RULES.md §8's masking rule targets. A Postman
@@ -45,25 +45,42 @@ browse but not write; a delivery agent — which lacks `restaurant:menu:read` en
 browse), is checked in at `postman/FDP-restaurant-service.postman_collection.json` (+ the shared
 environment also used by `customer-service`'s collection).
 
+### Distributed caching (RULES.md §12)
+
+**Done and verified live.** `GET /api/restaurants/{id}` and `GET /api/restaurants/{id}/menu-items`
+are each `@Cacheable` in Redis, namespaced `restaurant-service:restaurant`/`restaurant-service:menu`
+so this service can share one Redis instance with any future consumer without key collisions. Every
+entry carries a two-minute TTL (`CacheConfig`); every write path
+(`updateOwnProfile`/`addForOwner`/`updateForOwner`/`deleteForOwner`) evicts the affected entry
+immediately via `@CacheEvict` rather than waiting out the TTL. Verified live end to end: a `GET`
+populates the cache (confirmed via `redis-cli keys '*'`), a repeat `GET` is a cache hit, and each
+write path evicts exactly the one key it should — see `docs/technologies/redis.md` for the two
+Jackson-serialization gotchas this surfaced (caching happens at the DTO layer, not the JPA entity,
+for exactly that reason) and the full verification transcript.
+
 ## Depends on / depended on by
 - **Depends on:** `discovery-server` (Eureka client registration — registers on startup, verified
-  live), its own `restaurant_db` Postgres instance, and Keycloak's JWKS endpoint to validate tokens
+  live), its own `restaurant_db` Postgres instance, Keycloak's JWKS endpoint to validate tokens
   (same `common.security.jwt.KeycloakRoleConverter` shared with `customer-service`, RULES.md §3,
-  §8). **Not yet wired:** pulling shared config from `config-server`, and Redis caching for
-  read-heavy menu lookups (RULES.md §12) — both deliberate scope cuts for this pass, revisited once
-  they actually hurt.
-- **Depended on by:** `order-service` will call `restaurant-service` synchronously via OpenFeign
+  §8), and its own Redis instance for caching (RULES.md §12, done and verified live). **Not yet
+  wired:** pulling shared config from `config-server` — a deliberate scope cut for this pass,
+  revisited once it actually hurts.
+- **Depended on by:** `order-service` calls `restaurant-service` synchronously via OpenFeign
   (`lb://restaurant-service`) to validate menu items and pricing before accepting an order, wrapped
-  in a Resilience4j circuit breaker with a typed fallback (RULES.md §6, §7; Sprint 3, not built
-  yet). `api-gateway` will route `/api/restaurants/**` to it (Sprint 4).
+  in a Resilience4j circuit breaker with a typed fallback (RULES.md §6, §7) — done and verified
+  live, including the failure path. `api-gateway` will route `/api/restaurants/**` to it (Sprint 4,
+  not built yet).
 
 ## Delivered in
 Sprint 2 — "Customer & Restaurant services" (SPRINTS.md), alongside `customer-service`. **Sprint 2
 exit criteria met by both services**: each runs independently against its own database, with no
-shared tables and no direct database access from any other module.
+shared tables and no direct database access from any other module. Distributed caching (RULES.md
+§12, originally a documented Sprint 2 scope cut) was pulled forward and added in a later pass — see
+"Distributed caching" above.
 
 ## Related
 - RULES.md §2 (Service inventory), §5 (Data ownership), §6 (Communication rules), §12 (Caching)
 - SPRINTS.md — Sprint 2
 - [`./order-service.md`](./order-service.md) — the primary synchronous caller of this service's
   menu validation
+- [`../technologies/redis.md`](../technologies/redis.md)

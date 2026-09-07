@@ -45,6 +45,20 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-zipkin</artifactId>
 		</dependency>
+		<!-- Distributed caching (RULES.md §12): read-heavy public browsing (get-by-id, menu listing)
+			 cached in Redis, the single centralized cache, never a per-instance local/in-memory
+			 cache, which would break statelessness across horizontally-scaled replicas. Both starters
+			 together: spring-boot-starter-data-redis for the connection factory,
+			 spring-boot-starter-cache for the CacheManager/@Cacheable abstraction Boot's Redis
+			 autoconfiguration plugs into. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-redis</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-cache</artifactId>
+		</dependency>
 		<!-- Version managed by the root aggregator's spring-cloud-dependencies BOM import -->
 		<dependency>
 			<groupId>org.springframework.cloud</groupId>

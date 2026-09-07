@@ -19,13 +19,13 @@ cover that.
 | `postgres` | Docker | `fdp-postgres` | 5432 | Infra — live |
 | `mongodb` | Docker | `fdp-mongodb` | 27017 | Infra — live, in real use by `notification-service` |
 | `rabbitmq` | Docker | `fdp-rabbitmq` | 5672 (AMQP), 15672 (mgmt UI) | Infra — live, in real use by `order-service` (publish) and `notification-service` (consume) |
-| `redis` | Docker | `fdp-redis` | 6379 | Infra — live, unused by any service yet |
+| `redis` | Docker | `fdp-redis` | 6379 (or `REDIS_PORT` — see Troubleshooting if 6379 is already taken on your machine) | Infra — live, in real use by `restaurant-service` (caching) |
 | `keycloak` | Docker | `fdp-keycloak` | 8180 | Infra — live, identity provider |
 | `zipkin` | Docker | `fdp-zipkin` | 9411 | Infra — live, in real use by all four built services (distributed tracing) |
 | `config-server` | Maven (`spring-boot:run`) | `config-server` | 8888 | **Implemented** |
 | `discovery-server` | Maven | `discovery-server` | 8761 | **Implemented** |
 | `customer-service` | Maven | `customer-service` | 8082 | **Implemented** (needs `postgres` + `keycloak`) |
-| `restaurant-service` | Maven | `restaurant-service` | 8083 | **Implemented** (needs `postgres` + `keycloak`) |
+| `restaurant-service` | Maven | `restaurant-service` | 8083 | **Implemented** (needs `postgres`, `keycloak`, `redis`) |
 | `order-service` | Maven | `order-service` | 8084 | **Implemented** (needs `postgres`, `keycloak`, `rabbitmq`, `discovery-server`, `customer-service`, `restaurant-service`) |
 | `notification-service` | Maven | `notification-service` | 8086 | **Implemented** (needs `mongodb`, `keycloak`, `rabbitmq`, `discovery-server`; place an order via `order-service` to generate data) |
 | `api-gateway` | Maven | `api-gateway` | 8080 | Skeleton — boots, no routes yet |
@@ -312,6 +312,15 @@ http://localhost:9411/api/v2/dependencies` shows the same story as a call graph 
 timeline. Trigger any validation error (e.g. place an order with `"items": []`) and check the
 response's `traceId` field — it's a real trace ID now, directly open-able in Zipkin.
 
+### "I want to see the distributed cache for myself"
+With `restaurant-service` running, `GET /api/restaurants/{id}` via Postman/curl twice — both return
+the same body, but check `docker exec fdp-redis redis-cli -a fdp keys '*'` (add `-p <port>` if you
+overrode `REDIS_PORT`) after the first call and a new key (`restaurant-service:restaurant::{id}`)
+is already there before the second call even runs. `redis-cli ... ttl restaurant-service:restaurant::{id}`
+shows it counting down from two minutes. `PUT /api/restaurants/me` (as the owning
+`RESTAURANT_OWNER`) and check `keys '*'` again — the entry is gone, evicted immediately rather than
+waiting out the TTL; the next `GET` repopulates it with the new value.
+
 ### "I only need the databases/broker up, no application code running"
 ```bash
 docker compose up -d
@@ -335,7 +344,11 @@ That's it — no FDP service needs to be running for this.
 - **Port already in use** — another instance of the same service (or something unrelated) is
   already bound to that port; find and stop it with the commands in
   [Stopping a backgrounded/jar-run service](#stopping-a-backgroundedjar-run-service), or override
-  the container's host port via a repo-root `.env` file (see `.env.example`).
+  the container's host port via a repo-root `.env` file (see `.env.example`). A concrete real
+  example: `docker compose up -d redis` failing with `Bind for 0.0.0.0:6379 failed: port is already
+  allocated` because an unrelated Redis instance already owns 6379 on the host — set `REDIS_PORT`
+  in `.env` to something else, and keep `restaurant-service`'s own `spring.data.redis.port` in sync
+  with it.
 
 ---
 

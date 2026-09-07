@@ -133,8 +133,10 @@ Keycloak's token endpoint directly (no FDP service required yet).
   owners/admin). Reuses the same `common.security.jwt.KeycloakRoleConverter` and
   `jwk-set-uri`-based `SecurityConfig` pattern as `customer-service`, Swagger UI at
   `/swagger-ui/index.html`. Registers with Eureka on startup (verified live). Same deliberate scope
-  cuts as `customer-service`: no `config-server` integration yet, and Redis caching for menu
-  lookups (RULES.md §12) not wired either. Exercised end to end against real tokens for all three
+  cut as `customer-service`: no `config-server` integration yet. Redis caching for menu lookups
+  (RULES.md §12) was also a scope cut originally, but has since been pulled forward and wired up in
+  a later pass — done and verified live, see `docs/services/restaurant-service.md`'s "Distributed
+  caching" section. Exercised end to end against real tokens for all three
   relevant demo roles (`RESTAURANT_OWNER`, `CUSTOMER`, `DELIVERY_AGENT` — the last used specifically
   to prove it lacks `restaurant:menu:read` and is correctly rejected) — 13 Testcontainers-backed
   test classes plus a 21-request Postman collection

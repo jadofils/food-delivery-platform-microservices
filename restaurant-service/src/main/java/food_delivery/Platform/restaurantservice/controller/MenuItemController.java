@@ -2,6 +2,7 @@ package food_delivery.Platform.restaurantservice.controller;
 
 import java.util.List;
 
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import food_delivery.Platform.restaurantservice.config.CacheConfig;
 import food_delivery.Platform.restaurantservice.dto.MenuItemRequest;
 import food_delivery.Platform.restaurantservice.dto.MenuItemResponse;
 import food_delivery.Platform.restaurantservice.service.MenuItemService;
@@ -72,9 +74,18 @@ public class MenuItemController {
 		return ResponseEntity.noContent().build();
 	}
 
+	/**
+	 * Cached in Redis (RULES.md §12) — read-heavy public browsing. Caching the
+	 * {@code List<MenuItemResponse>} DTO here, not the {@code List<MenuItem>} entities in the
+	 * service layer, for the same reason as {@code RestaurantController.getById}: entities aren't
+	 * {@code Serializable} and a lazy {@code @ManyToOne} back-reference is a Hibernate-proxy
+	 * serialization risk the DTO doesn't have. {@code MenuItemService}'s
+	 * add/update/delete-for-owner methods each evict this same entry on a write.
+	 */
 	@Operation(summary = "Browse: list a restaurant's menu items — requires restaurant:menu:read")
 	@PreAuthorize("hasAuthority('restaurant:menu:read')")
 	@GetMapping("/api/restaurants/{restaurantId}/menu-items")
+	@Cacheable(cacheNames = CacheConfig.MENU_CACHE, key = "#restaurantId")
 	public List<MenuItemResponse> listForRestaurant(@PathVariable Long restaurantId) {
 		return menuItemService.listForRestaurant(restaurantId).stream().map(MenuItemResponse::from).toList();
 	}
