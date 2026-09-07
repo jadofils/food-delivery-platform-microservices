@@ -31,7 +31,7 @@ import io.github.resilience4j.retry.annotation.Retry;
 @Component
 public class CustomerServiceGateway {
 
-	private static final String INSTANCE = "customer-service";
+	private static final String INSTANCE = ServiceNames.CUSTOMER_SERVICE;
 
 	private final CustomerServiceClient client;
 
@@ -54,8 +54,7 @@ public class CustomerServiceGateway {
 
 	@SuppressWarnings("unused")
 	private CustomerProfileResponse profileFallback(Throwable t) {
-		throw new ServiceUnavailableException("customer-service is currently unavailable. Please try again shortly.",
-				t);
+		throw new ServiceUnavailableException(INSTANCE + " is currently unavailable. Please try again shortly.", t);
 	}
 
 	@CircuitBreaker(name = INSTANCE, fallbackMethod = "addressFallback")
@@ -71,8 +70,7 @@ public class CustomerServiceGateway {
 
 	@SuppressWarnings("unused")
 	private DeliveryAddressResponse addressFallback(Long addressId, Throwable t) {
-		throw new ServiceUnavailableException("customer-service is currently unavailable. Please try again shortly.",
-				t);
+		throw new ServiceUnavailableException(INSTANCE + " is currently unavailable. Please try again shortly.", t);
 	}
 
 }

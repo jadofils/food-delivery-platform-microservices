@@ -15,7 +15,7 @@ import food_delivery.Platform.orderservice.client.dto.RestaurantValidationRespon
  * (gated by {@code restaurant:menu:read}, which the placing customer's own token already carries)
  * — order-service never needs restaurant-owner-level access to validate an order.
  */
-@FeignClient(name = "restaurant-service")
+@FeignClient(name = ServiceNames.RESTAURANT_SERVICE)
 public interface RestaurantServiceClient {
 
 	@GetMapping("/api/restaurants/{id}")

@@ -13,7 +13,7 @@ import food_delivery.Platform.orderservice.client.dto.DeliveryStatusResponse;
  * ({@link TokenRelayRequestInterceptor}) — {@code delivery-service} checks ownership itself
  * (RULES.md §8); order-service never asserts an identity it doesn't already have.
  */
-@FeignClient(name = "delivery-service")
+@FeignClient(name = ServiceNames.DELIVERY_SERVICE)
 public interface DeliveryServiceClient {
 
 	@GetMapping("/api/deliveries/by-order/{orderId}")

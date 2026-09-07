@@ -19,7 +19,7 @@ import food_delivery.Platform.orderservice.client.dto.DeliveryAddressResponse;
  * "service account" or admin credential involved; order-service is acting on behalf of the exact
  * customer who is placing the order, using the same permission they already have.
  */
-@FeignClient(name = "customer-service")
+@FeignClient(name = ServiceNames.CUSTOMER_SERVICE)
 public interface CustomerServiceClient {
 
 	@GetMapping("/api/customers/me")

@@ -23,7 +23,7 @@ import io.github.resilience4j.retry.annotation.Retry;
 public class DeliveryServiceGateway {
 
 	private static final Logger log = LoggerFactory.getLogger(DeliveryServiceGateway.class);
-	private static final String INSTANCE = "delivery-service";
+	private static final String INSTANCE = ServiceNames.DELIVERY_SERVICE;
 
 	private final DeliveryServiceClient client;
 
@@ -45,7 +45,7 @@ public class DeliveryServiceGateway {
 
 	@SuppressWarnings("unused")
 	private String statusFallback(Long orderId, Throwable t) {
-		log.debug("delivery-service unavailable while enriching order {} with delivery status: {}", orderId,
+		log.debug("{} unavailable while enriching order {} with delivery status: {}", INSTANCE, orderId,
 				t.getMessage());
 		return null;
 	}

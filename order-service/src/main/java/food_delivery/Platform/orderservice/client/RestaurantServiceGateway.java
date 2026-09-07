@@ -17,7 +17,7 @@ import io.github.resilience4j.retry.annotation.Retry;
 @Component
 public class RestaurantServiceGateway {
 
-	private static final String INSTANCE = "restaurant-service";
+	private static final String INSTANCE = ServiceNames.RESTAURANT_SERVICE;
 
 	private final RestaurantServiceClient client;
 
@@ -38,8 +38,7 @@ public class RestaurantServiceGateway {
 
 	@SuppressWarnings("unused")
 	private RestaurantValidationResponse restaurantFallback(Long id, Throwable t) {
-		throw new ServiceUnavailableException(
-				"restaurant-service is currently unavailable. Please try again shortly.", t);
+		throw new ServiceUnavailableException(INSTANCE + " is currently unavailable. Please try again shortly.", t);
 	}
 
 	@CircuitBreaker(name = INSTANCE, fallbackMethod = "menuItemsFallback")
@@ -55,8 +54,7 @@ public class RestaurantServiceGateway {
 
 	@SuppressWarnings("unused")
 	private List<MenuItemValidationResponse> menuItemsFallback(Long restaurantId, Throwable t) {
-		throw new ServiceUnavailableException(
-				"restaurant-service is currently unavailable. Please try again shortly.", t);
+		throw new ServiceUnavailableException(INSTANCE + " is currently unavailable. Please try again shortly.", t);
 	}
 
 }
