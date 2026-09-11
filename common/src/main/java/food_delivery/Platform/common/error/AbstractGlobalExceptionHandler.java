@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -118,6 +119,30 @@ public abstract class AbstractGlobalExceptionHandler {
 		FieldError fieldError = new FieldError(ex.getName(), "must be a valid " + requiredType);
 		ApiErrorResponse body = ApiErrorResponse.ofValidation("Validation failed.", request.getRequestURI(), traceId,
 				List.of(fieldError));
+		return ResponseEntity.status(body.status()).body(body);
+	}
+
+	/**
+	 * The {@code @RequestBody} itself couldn't be parsed/deserialized -- malformed JSON, or valid
+	 * JSON missing a field a record's canonical constructor requires (e.g. a primitive component
+	 * with no null-default, such as {@code boolean isOpen} on a request DTO record: Jackson can't
+	 * bind {@code null} into it and throws this before Bean Validation ever runs, so
+	 * {@code @Valid}'s own {@code @NotNull} never gets a chance to produce the friendlier
+	 * {@link MethodArgumentNotValidException} path above). Without this handler the failure falls
+	 * through to the catch-all below and gets reported as a {@code 500}, which is wrong the same way
+	 * an unmapped {@link MethodArgumentTypeMismatchException} would be -- the caller sent a bad
+	 * request body, this service isn't broken. Maps to the same {@code VALIDATION_FAILED} shape,
+	 * same reasoning as {@link #handleTypeMismatch}. Confirmed live: {@code PUT /api/restaurants/me}
+	 * with a JSON body omitting {@code isOpen} previously came back {@code 500 INTERNAL_ERROR}; now
+	 * {@code 400 VALIDATION_FAILED}.
+	 */
+	@ExceptionHandler(HttpMessageNotReadableException.class)
+	public ResponseEntity<ApiErrorResponse> handleMessageNotReadable(HttpMessageNotReadableException ex,
+			HttpServletRequest request) {
+		String traceId = traceId();
+		log.debug("Malformed request body on {} [traceId={}]: {}", request.getRequestURI(), traceId, ex.getMessage());
+		ApiErrorResponse body = ApiErrorResponse.ofValidation("Malformed request body.", request.getRequestURI(),
+				traceId, List.of());
 		return ResponseEntity.status(body.status()).body(body);
 	}
 

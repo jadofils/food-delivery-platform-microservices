@@ -10,6 +10,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -93,6 +94,23 @@ class AbstractGlobalExceptionHandlerTest {
 		assertThat(response.getBody().error()).isEqualTo("VALIDATION_FAILED");
 		assertThat(response.getBody().errors()).hasSize(1);
 		assertThat(response.getBody().errors().get(0).field()).isEqualTo("id");
+	}
+
+	@Test
+	void handleMessageNotReadable_reportsA400NotA500() {
+		// Reproduces the real bug: PUT /api/restaurants/me with a JSON body omitting the
+		// primitive "isOpen" field was falling through to the 500 catch-all (Jackson can't bind
+		// null into a record's primitive component).
+		var ex = new HttpMessageNotReadableException("Cannot map `null` into type `boolean`",
+				(org.springframework.http.HttpInputMessage) null);
+
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		when(request.getRequestURI()).thenReturn("/api/restaurants/me");
+
+		var response = handler.handleMessageNotReadable(ex, request);
+
+		assertThat(response.getStatusCode().value()).isEqualTo(400);
+		assertThat(response.getBody().error()).isEqualTo("VALIDATION_FAILED");
 	}
 
 	@Test
