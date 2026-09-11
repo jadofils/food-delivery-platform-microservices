@@ -51,9 +51,40 @@ dynamic (`server.port=0`) and only discoverable via Eureka — see
 | Zipkin UI | `http://localhost:9411` |
 | RabbitMQ management UI | `http://localhost:15672` |
 
-A domain service's own Swagger UI (`/swagger-ui/index.html`) lives at its current dynamic port —
-look it up via the Eureka registry API row above first. Full recipe:
-[README.md's Operational endpoints](README.md#operational-endpoints--while-the-system-is-running).
+### Swagger UI / OpenAPI — per domain service, at its *current* live port
+
+Ports are dynamic (`server.port=0`) and reassigned on every restart — no fixed URL to bookmark.
+Look one up, then browse it:
+```bash
+curl -s http://localhost:8761/eureka/apps/CUSTOMER-SERVICE -H "Accept: application/json" \
+  | grep -o '"port":{[^}]*}'
+```
+(swap `CUSTOMER-SERVICE` for `RESTAURANT-SERVICE`, `ORDER-SERVICE`, `DELIVERY-SERVICE`, or
+`NOTIFICATION-SERVICE`), then open:
+
+| Path | What |
+|---|---|
+| `http://localhost:<port>/swagger-ui/index.html` | Interactive Swagger UI — click **Authorize** (padlock) and paste a raw access token (no `Bearer ` prefix) to call endpoints from the page |
+| `http://localhost:<port>/v3/api-docs` | The raw OpenAPI 3 spec as JSON — same content Swagger UI itself renders |
+
+`discovery-server`/`config-server`/`api-gateway` have none of the above — pure infra or edge
+routing only, nothing to document (see [Service inventory](README.md#service-inventory)).
+
+**This machine's ports right now** (re-run the `curl` above once they've restarted — these change
+every time):
+
+| Service | Swagger UI |
+|---|---|
+| customer-service | `http://localhost:56035/swagger-ui/index.html` |
+| restaurant-service | `http://localhost:55948/swagger-ui/index.html` |
+| order-service | `http://localhost:56022/swagger-ui/index.html` |
+| delivery-service | `http://localhost:56066/swagger-ui/index.html` |
+| notification-service | `http://localhost:62944/swagger-ui/index.html` |
+
+(Eureka shows a second live instance for customer-/order-/delivery-/notification-service too —
+leftover duplicates from earlier testing, harmless, and actually a live demo of the load-balancing
+`README.md`'s architecture section describes. Query the same Eureka URL above to see both ports per
+service.)
 
 ---
 
