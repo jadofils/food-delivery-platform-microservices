@@ -73,9 +73,7 @@ left open. See `docs/technologies/redis.md`'s "Real gotchas" section for the ful
 - **Depends on:** `discovery-server` (Eureka client registration — registers on startup, verified
   live), its own `restaurant_db` Postgres instance, Keycloak's JWKS endpoint to validate tokens
   (same `common.security.jwt.KeycloakRoleConverter` shared with `customer-service`, RULES.md §3,
-  §8), and its own Redis instance for caching (RULES.md §12, done and verified live). **Not yet
-  wired:** pulling shared config from `config-server` — a deliberate scope cut for this pass,
-  revisited once it actually hurts.
+  §8), and its own Redis instance for caching (RULES.md §12, done and verified live).
 - **Depended on by:** `order-service` calls `restaurant-service` synchronously via OpenFeign
   (`lb://restaurant-service`) to validate menu items and pricing before accepting an order, wrapped
   in a Resilience4j circuit breaker with a typed fallback (RULES.md §6, §7) — done and verified

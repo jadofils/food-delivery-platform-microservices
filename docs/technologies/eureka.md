@@ -47,8 +47,8 @@ host/port.
   `spring-cloud-starter-netflix-eureka-client` and registers with `discovery-server` on startup.
 - `api-gateway` route definitions use `lb://<service-name>` URIs resolved through Eureka rather
   than static hosts (RULES.md §2, §6).
-- Config (Eureka server URL) is externalized via `config-server` plus `application-{profile}.yml`
-  — never hardcoded per service (RULES.md §1 factor 3).
+- Config (Eureka server URL) lives in each service's own `application-{profile}.properties` —
+  never hardcoded in code (RULES.md §1 factor 3).
 - Docker Compose service name: `discovery-server`, matching the module name; other services'
   `depends_on: condition: service_healthy` ensures `discovery-server` is ready before dependents
   start (RULES.md §10).
@@ -87,8 +87,8 @@ or package and run the jar directly:
 java -jar discovery-server/target/discovery-server-0.0.1-SNAPSHOT.jar
 ```
 No external dependency is required — `discovery-server` needs no database, no broker, and no
-other running service. It's one of the two things (with `config-server`) everything else in the
-platform depends on existing first (SPRINTS.md Sprint 1).
+other running service. It's the one thing everything else in the platform depends on existing
+first (SPRINTS.md Sprint 1).
 
 ### How to access it
 - **Dashboard:** `http://localhost:8761` — the stock Eureka web UI: registered instances, their
@@ -123,11 +123,12 @@ Start here if you're new to the platform's service-discovery piece: run the comm
 `http://localhost:8761` in a browser, and you'll see an empty dashboard. The `lb://<service-name>`
 addressing scheme every Feign client and gateway route will eventually use (RULES.md §6) only
 works once a service actually registers here — which is exactly why Sprint 1 stands this up
-before any domain service exists. See `./spring-cloud-config.md` for the other half of the
-platform's spine, and `docs/services/discovery-server.md` for this service's own reference doc.
+before any domain service exists. See `docs/services/discovery-server.md` for this service's own
+reference doc (`config-server`, originally the other half of the platform's spine, was retired
+unused — see `docs/decisions/0002-retire-config-server.md`).
 
 ## Related
 - `RULES.md §2` (service inventory, port 8761), `RULES.md §6` (communication rules — `lb://`
   resolution), `RULES.md §1` factors 4 & 8
 - `SPRINTS.md` Sprint 1 (discovery-server stood up), Sprint 4 (gateway load-balanced routing)
-- `./spring-cloud-gateway.md`, `./spring-cloud-config.md`
+- `./spring-cloud-gateway.md`

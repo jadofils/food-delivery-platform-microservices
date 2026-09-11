@@ -36,8 +36,8 @@ annotations/AOP.
   the root POM.
 - Every Feign client method is annotated with `@CircuitBreaker`, `@Retry`, `@TimeLimiter`, and
   `@Bulkhead`, each with an explicit instance name and explicit configuration (no reliance on
-  library defaults) — configured via `config-server`-sourced properties, not hardcoded (RULES.md
-  §7, §1 factor 3).
+  library defaults) — configured via each service's own `application.properties`, not hardcoded in
+  code (RULES.md §7, §1 factor 3).
 - Each circuit breaker declares a typed fallback method returning a clear, structured error (e.g.
   "menu service unavailable, try again") rather than propagating a timeout or stack trace (RULES.md
   §7).

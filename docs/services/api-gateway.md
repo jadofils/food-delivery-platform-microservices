@@ -80,8 +80,7 @@ yet done.
   additionally needed `eureka.instance.prefer-ip-address=true`; see "Getting started" for why),
   Keycloak's JWKS endpoint (to validate JWT signatures at the edge, RULES.md §8), and Redis
   (rate-limit counters, RULES.md §12). It has no Feign clients of its own and publishes/consumes no
-  RabbitMQ events. **Not yet wired:** `config-server` integration — same documented scope cut as
-  every other service.
+  RabbitMQ events.
 - **Depended on by:** every external client (browser, Postman, curl) — it is the sole *practical*
   entry point now, not just the intended one: every domain service's own port is OS-assigned
   (RULES.md §2), so there is no stable direct address left to call even if something wanted to

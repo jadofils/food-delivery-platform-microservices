@@ -88,9 +88,7 @@ time as an agent worked the same delivery via the endpoints above, and correctly
 
 ## Depends on / depended on by
 - **Depends on:** `discovery-server` (Eureka client registration — verified live), its own
-  `delivery_db` Postgres instance, and RabbitMQ (both consume and publish). **Not yet wired:**
-  pulling shared config from `config-server` — the same documented scope cut as every other
-  service.
+  `delivery_db` Postgres instance, and RabbitMQ (both consume and publish).
 - **Depended on by:** `notification-service` consumes this service's `DeliveryStatusUpdatedEvent` —
   done and verified live. `order-service` calls `GET /api/deliveries/by-order/{orderId}`
   synchronously (via OpenFeign, resolved through Eureka) to enrich its own order-tracking view —

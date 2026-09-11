@@ -49,8 +49,9 @@ is checked in at `postman/FDP-customer-service.postman_collection.json` (+ match
   live), its own `customer_db` Postgres instance, and Keycloak's JWKS endpoint to validate tokens
   (`spring-boot-starter-oauth2-resource-server`, `common.security.jwt.KeycloakRoleConverter` for
   mapping `resource_access.fdp-api.roles` into Spring Security authorities — RULES.md §3, §8).
-  **Not yet wired:** pulling shared config from `config-server` — this service still configures
-  its datasource/security/Eureka settings directly in its own `application.properties` rather than
+  This service configures its datasource/security/Eureka settings directly in its own
+  `application.properties` — the permanent story now (`config-server` was retired unused, see
+  `docs/decisions/0002-retire-config-server.md`), not a temporary gap, rather than
   via `spring-cloud-starter-config`. That's a deliberate scope cut for this pass, not an oversight;
   revisit once a second Postgres-backed service exists and the duplication actually hurts.
 - **Depended on by:** `order-service` calls `customer-service` synchronously via OpenFeign to

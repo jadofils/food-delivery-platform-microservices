@@ -52,8 +52,9 @@ creation.
   (`RestaurantResponse`, `List<MenuItemResponse>`) — not `GenericJackson2JsonRedisSerializer` with
   default typing, which was tried first and broke in a way population/eviction checks alone never
   caught (see "Real gotchas" below).
-- Redis connection details (host/port/password) come from `application.properties`; not yet sourced
-  through `config-server` (same documented scope cut as every other service so far).
+- Redis connection details (host/port/password) come from `application.properties` — the
+  permanent story, not a temporary gap (`config-server` was retired unused, see
+  `docs/decisions/0002-retire-config-server.md`).
 
 ### Real gotchas surfaced getting this working
 

@@ -87,8 +87,7 @@ A Postman collection covering every row above, plus the resilience/async demos, 
   `restaurant-service` mid-flow, got a clean `503` in ~7s, confirmed automatic recovery once it
   came back). Also calls `delivery-service` synchronously, but only to enrich `GET
   /api/orders/me/{id}`'s read view with live tracking status — never on the placement/cancellation
-  path, and never blocking (see "Order tracking" above). **Not yet wired:** `config-server`
-  integration — same documented scope cut as `customer-`/`restaurant-service`.
+  path, and never blocking (see "Order tracking" above).
 - **Depended on by:** `notification-service` consumes `OrderPlacedEvent`/`OrderCancelledEvent` to
   persist notification/audit records, and `delivery-service` consumes the same events to
   auto-create/cancel delivery assignments — both done and verified live (see

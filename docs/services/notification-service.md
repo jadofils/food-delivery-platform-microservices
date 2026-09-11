@@ -94,8 +94,7 @@ unnecessary write on the common (non-concurrent) redelivery case, not relied on 
 
 ## Depends on / depended on by
 - **Depends on:** `discovery-server` (Eureka client registration — verified live), its own
-  `notification_db` MongoDB instance, and RabbitMQ (consume only). **Not yet wired:**
-  `config-server` integration — same documented scope cut as every other service so far.
+  `notification_db` MongoDB instance, and RabbitMQ (consume only).
 - **Depended on by:** no other service calls `notification-service` synchronously; it is purely an
   event consumer and a query API for its own audit data.
 

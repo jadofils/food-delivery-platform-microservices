@@ -18,7 +18,7 @@ which is the separate, CI-driven image-build path (see `./jib.md`).
   base assignment (`ReadMe.md` Epic 2) both require (RULES.md §10; SPRINTS.md Sprint 7; `ReadMe.md`
   Epic 2).
 - Health checks and `depends_on: condition: service_healthy` are mandatory so that
-  `discovery-server`/`config-server` and infra (databases, broker) are ready before dependents
+  `discovery-server` and infra (databases, broker) are ready before dependents
   start — required for the system to come up correctly from a clean checkout with no manual steps
   (RULES.md §10; SPRINTS.md Sprint 7 exit criteria).
 

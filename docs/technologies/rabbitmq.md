@@ -43,8 +43,9 @@ logic until Sprint 5.
   criteria).
 - Consumers dedupe on event ID to guarantee idempotency under at-least-once delivery (RULES.md §6,
   §1 factor 9) — e.g. `delivery-service` must not double-create a delivery assignment on redelivery.
-- Connection details (host, port, credentials) are never hardcoded — sourced from `config-server`
-  plus environment variables / Docker secrets, matching every other backing service (RULES.md §1
+- Connection details (host, port, credentials) are never hardcoded in code — sourced from each
+  service's own `application.properties` plus environment variables / Docker secrets, matching
+  every other backing service (RULES.md §1
   factor 3, §4).
 - Docker Compose service name: `rabbitmq`, container port `5672` (AMQP) per the target architecture
   in ReadMe.md; management UI port if enabled is not specified beyond that in RULES.md/SPRINTS.md.

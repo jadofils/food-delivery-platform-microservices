@@ -40,8 +40,9 @@ domain services that exist today (`order-service`, `customer-service`, `restaura
   (publish side — `order-service`, and `delivery-service` since it both publishes and consumes) and
   `spring.rabbitmq.listener.simple.observation-enabled` (consume side — `notification-service`, and
   `delivery-service`) for the RabbitMQ hops specifically. Hardcoded to `localhost` per-service
-  today, matching every other service's not-yet-wired `config-server` scope cut — not yet sourced
-  through `config-server` (RULES.md §1 factor 3 is a documented gap here, same as elsewhere).
+  today, in each service's own `application.properties` — the permanent story now, not a
+  temporary gap (`config-server` was retired unused, see
+  `docs/decisions/0002-retire-config-server.md`).
 - No manual span creation is required for the standard flow: Micrometer Tracing auto-instruments
   Spring MVC request handling, OpenFeign calls (once `feign-micrometer` is present), and RabbitMQ
   publish/listen hops (once `observation-enabled` is set) — RULES.md §13. Two non-obvious
