@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "fdp-customer-service-collection",
 		"name": "FDP - customer-service (auth + registration)",
-		"description": "Exercises Keycloak-issued auth and customer-service's registration/profile/address endpoints end to end, against a locally running stack (`docker compose up -d postgres keycloak`, then run `customer-service` on :8082). Import the sibling `FDP.postman_environment.json` and select it before running.\n\nRun order: **1. Get Tokens** first (every other folder's requests reuse the tokens it saves into environment variables), then the rest in numeric folder order. See `docs/services/customer-service.md` and `credentials.md` for background.",
+		"description": "Exercises Keycloak-issued auth and customer-service's registration/profile/address endpoints end to end, against a locally running stack. customer-service (like every domain service) binds a dynamic, OS-assigned port (`server.port=0`) and is reached exclusively through `api-gateway` on `:8080` -- this collection's `customerServiceUrl` variable already points at the gateway, not at customer-service's own (unadvertised) port. Start infra with `docker compose up -d postgres keycloak`, then `discovery-server`, `customer-service`, and `api-gateway` (see RUNNING.md). Import the sibling `FDP.postman_environment.json` and select it before running.\n\nRun order: **1. Get Tokens** first (every other folder's requests reuse the tokens it saves into environment variables), then the rest in numeric folder order. See `docs/services/customer-service.md` and `credentials.md` for background.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
@@ -27,20 +27,45 @@
 					],
 					"request": {
 						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
 						"body": {
 							"mode": "urlencoded",
 							"urlencoded": [
-								{ "key": "grant_type", "value": "password" },
-								{ "key": "client_id", "value": "{{clientId}}" },
-								{ "key": "username", "value": "{{customerUsername}}" },
-								{ "key": "password", "value": "{{customerPassword}}" }
+								{
+									"key": "grant_type",
+									"value": "password"
+								},
+								{
+									"key": "client_id",
+									"value": "{{clientId}}"
+								},
+								{
+									"key": "username",
+									"value": "{{customerUsername}}"
+								},
+								{
+									"key": "password",
+									"value": "{{customerPassword}}"
+								}
 							]
 						},
 						"url": {
 							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
-							"host": ["{{keycloakUrl}}"],
-							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+							"host": [
+								"{{keycloakUrl}}"
+							],
+							"path": [
+								"realms",
+								"{{realm}}",
+								"protocol",
+								"openid-connect",
+								"token"
+							]
 						}
 					}
 				},
@@ -61,20 +86,45 @@
 					],
 					"request": {
 						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
 						"body": {
 							"mode": "urlencoded",
 							"urlencoded": [
-								{ "key": "grant_type", "value": "password" },
-								{ "key": "client_id", "value": "{{clientId}}" },
-								{ "key": "username", "value": "{{adminUsername}}" },
-								{ "key": "password", "value": "{{adminPassword}}" }
+								{
+									"key": "grant_type",
+									"value": "password"
+								},
+								{
+									"key": "client_id",
+									"value": "{{clientId}}"
+								},
+								{
+									"key": "username",
+									"value": "{{adminUsername}}"
+								},
+								{
+									"key": "password",
+									"value": "{{adminPassword}}"
+								}
 							]
 						},
 						"url": {
 							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
-							"host": ["{{keycloakUrl}}"],
-							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+							"host": [
+								"{{keycloakUrl}}"
+							],
+							"path": [
+								"realms",
+								"{{realm}}",
+								"protocol",
+								"openid-connect",
+								"token"
+							]
 						}
 					}
 				},
@@ -95,20 +145,45 @@
 					],
 					"request": {
 						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
 						"body": {
 							"mode": "urlencoded",
 							"urlencoded": [
-								{ "key": "grant_type", "value": "password" },
-								{ "key": "client_id", "value": "{{clientId}}" },
-								{ "key": "username", "value": "{{restaurantOwnerUsername}}" },
-								{ "key": "password", "value": "{{restaurantOwnerPassword}}" }
+								{
+									"key": "grant_type",
+									"value": "password"
+								},
+								{
+									"key": "client_id",
+									"value": "{{clientId}}"
+								},
+								{
+									"key": "username",
+									"value": "{{restaurantOwnerUsername}}"
+								},
+								{
+									"key": "password",
+									"value": "{{restaurantOwnerPassword}}"
+								}
 							]
 						},
 						"url": {
 							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
-							"host": ["{{keycloakUrl}}"],
-							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+							"host": [
+								"{{keycloakUrl}}"
+							],
+							"path": [
+								"realms",
+								"{{realm}}",
+								"protocol",
+								"openid-connect",
+								"token"
+							]
 						}
 					}
 				},
@@ -129,20 +204,45 @@
 					],
 					"request": {
 						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
 						"body": {
 							"mode": "urlencoded",
 							"urlencoded": [
-								{ "key": "grant_type", "value": "password" },
-								{ "key": "client_id", "value": "{{clientId}}" },
-								{ "key": "username", "value": "{{deliveryAgentUsername}}" },
-								{ "key": "password", "value": "{{deliveryAgentPassword}}" }
+								{
+									"key": "grant_type",
+									"value": "password"
+								},
+								{
+									"key": "client_id",
+									"value": "{{clientId}}"
+								},
+								{
+									"key": "username",
+									"value": "{{deliveryAgentUsername}}"
+								},
+								{
+									"key": "password",
+									"value": "{{deliveryAgentPassword}}"
+								}
 							]
 						},
 						"url": {
 							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
-							"host": ["{{keycloakUrl}}"],
-							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+							"host": [
+								"{{keycloakUrl}}"
+							],
+							"path": [
+								"realms",
+								"{{realm}}",
+								"protocol",
+								"openid-connect",
+								"token"
+							]
 						}
 					}
 				},
@@ -161,20 +261,45 @@
 					],
 					"request": {
 						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
 						"body": {
 							"mode": "urlencoded",
 							"urlencoded": [
-								{ "key": "grant_type", "value": "password" },
-								{ "key": "client_id", "value": "{{clientId}}" },
-								{ "key": "username", "value": "{{customerUsername}}" },
-								{ "key": "password", "value": "definitely-wrong" }
+								{
+									"key": "grant_type",
+									"value": "password"
+								},
+								{
+									"key": "client_id",
+									"value": "{{clientId}}"
+								},
+								{
+									"key": "username",
+									"value": "{{customerUsername}}"
+								},
+								{
+									"key": "password",
+									"value": "definitely-wrong"
+								}
 							]
 						},
 						"url": {
 							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
-							"host": ["{{keycloakUrl}}"],
-							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+							"host": [
+								"{{keycloakUrl}}"
+							],
+							"path": [
+								"realms",
+								"{{realm}}",
+								"protocol",
+								"openid-connect",
+								"token"
+							]
 						}
 					}
 				}
@@ -189,13 +314,33 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('not registered yet', () => pm.response.to.have.status(404));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('not registered yet', () => pm.response.to.have.status(404));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{restaurantOwnerToken}}" }],
-						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] },
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{restaurantOwnerToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me",
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me"
+							]
+						},
 						"description": "Uses the restaurant-owner demo account on purpose: it's never called Register below, so this reliably 404s without needing a throwaway account."
 					}
 				},
@@ -207,11 +352,13 @@
 							"script": {
 								"type": "text/javascript",
 								"exec": [
-									"pm.test('created', () => pm.response.to.have.status(201));",
-									"const body = pm.response.json();",
-									"pm.test('email is masked', () => pm.expect(body.email).to.match(/^.\\*{5}.$/));",
-									"pm.test('phoneNumber is masked', () => pm.expect(body.phoneNumber).to.match(/^.\\*{5}.$/));",
-									"pm.environment.set('customerId', body.id);"
+									"pm.test('created, or already exists from a prior run', () => [201, 409].includes(pm.response.code));",
+									"if (pm.response.code === 201) {",
+									"  const body = pm.response.json();",
+									"  pm.test('email is masked', () => pm.expect(body.email).to.match(/^.\\*{5}.$/));",
+									"  pm.test('phoneNumber is masked', () => pm.expect(body.phoneNumber).to.match(/^.\\*{5}.$/));",
+									"  pm.environment.set('customerId', body.id);",
+									"}"
 								]
 							}
 						}
@@ -219,11 +366,35 @@
 					"request": {
 						"method": "POST",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
-						"body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"+15551234567\"\n}", "options": { "raw": { "language": "json" } } },
-						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phoneNumber\": \"+15551234567\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me",
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -231,17 +402,46 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('conflict on repeat registration', () => pm.response.to.have.status(409));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('conflict on repeat registration', () => pm.response.to.have.status(409));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "POST",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
-						"body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"+15551234567\"\n}", "options": { "raw": { "language": "json" } } },
-						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phoneNumber\": \"+15551234567\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me",
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -262,11 +462,35 @@
 					"request": {
 						"method": "POST",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{deliveryAgentToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{deliveryAgentToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
-						"body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"not-a-phone\"\n}", "options": { "raw": { "language": "json" } } },
-						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phoneNumber\": \"not-a-phone\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me",
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -274,13 +498,34 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));",
+									"pm.environment.set('customerId', pm.response.json().id);"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me",
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -301,11 +546,35 @@
 					"request": {
 						"method": "PUT",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
-						"body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"+15559998888\"\n}", "options": { "raw": { "language": "json" } } },
-						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phoneNumber\": \"+15559998888\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me",
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me"
+							]
+						}
 					}
 				}
 			]
@@ -331,15 +600,36 @@
 					"request": {
 						"method": "POST",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n  \"label\": \"Home\",\n  \"street\": \"12 Kigali Ave\",\n  \"city\": \"Kigali\",\n  \"state\": \"Kigali City\",\n  \"postalCode\": \"00000\",\n  \"country\": \"Rwanda\",\n  \"isDefault\": true\n}",
-							"options": { "raw": { "language": "json" } }
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
 						},
-						"url": { "raw": "{{customerServiceUrl}}/api/customers/me/addresses", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me", "addresses"] }
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me/addresses",
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me",
+								"addresses"
+							]
+						}
 					}
 				},
 				{
@@ -347,13 +637,35 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.test('has at least one', () => pm.expect(pm.response.json().length).to.be.above(0));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));",
+									"pm.test('has at least one', () => pm.expect(pm.response.json().length).to.be.above(0));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-						"url": { "raw": "{{customerServiceUrl}}/api/customers/me/addresses", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me", "addresses"] }
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me/addresses",
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me",
+								"addresses"
+							]
+						}
 					}
 				},
 				{
@@ -361,16 +673,34 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
 						"url": {
 							"raw": "{{customerServiceUrl}}/api/customers/me/addresses/{{addressId}}",
-							"host": ["{{customerServiceUrl}}"],
-							"path": ["api", "customers", "me", "addresses", "{{addressId}}"]
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me",
+								"addresses",
+								"{{addressId}}"
+							]
 						}
 					}
 				},
@@ -379,24 +709,47 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "PUT",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n  \"label\": \"Work\",\n  \"street\": \"5 Downtown Rd\",\n  \"city\": \"Kigali\",\n  \"state\": \"Kigali City\",\n  \"postalCode\": \"00001\",\n  \"country\": \"Rwanda\",\n  \"isDefault\": false\n}",
-							"options": { "raw": { "language": "json" } }
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
 						},
 						"url": {
 							"raw": "{{customerServiceUrl}}/api/customers/me/addresses/{{addressId}}",
-							"host": ["{{customerServiceUrl}}"],
-							"path": ["api", "customers", "me", "addresses", "{{addressId}}"]
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me",
+								"addresses",
+								"{{addressId}}"
+							]
 						}
 					}
 				},
@@ -405,16 +758,34 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('not found for a different owner', () => pm.response.to.have.status(404));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('not found for a different owner', () => pm.response.to.have.status(404));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{deliveryAgentToken}}" }],
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{deliveryAgentToken}}"
+							}
+						],
 						"url": {
 							"raw": "{{customerServiceUrl}}/api/customers/me/addresses/{{addressId}}",
-							"host": ["{{customerServiceUrl}}"],
-							"path": ["api", "customers", "me", "addresses", "{{addressId}}"]
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me",
+								"addresses",
+								"{{addressId}}"
+							]
 						},
 						"description": "delivery-agent@fdp.test has never registered a customer profile, so it has no addresses either — the ownership check 404s the same way it would for a genuinely different customer."
 					}
@@ -424,16 +795,34 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('no content', () => pm.response.to.have.status(204));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('no content', () => pm.response.to.have.status(204));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "DELETE",
-						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
 						"url": {
 							"raw": "{{customerServiceUrl}}/api/customers/me/addresses/{{addressId}}",
-							"host": ["{{customerServiceUrl}}"],
-							"path": ["api", "customers", "me", "addresses", "{{addressId}}"]
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me",
+								"addresses",
+								"{{addressId}}"
+							]
 						}
 					}
 				}
@@ -448,16 +837,32 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
 						"url": {
 							"raw": "{{customerServiceUrl}}/api/customers/{{customerId}}",
-							"host": ["{{customerServiceUrl}}"],
-							"path": ["api", "customers", "{{customerId}}"]
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"{{customerId}}"
+							]
 						}
 					}
 				},
@@ -466,13 +871,33 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.test('paged shape', () => pm.expect(pm.response.json()).to.have.property('content'));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));",
+									"pm.test('paged shape', () => pm.expect(pm.response.json()).to.have.property('content'));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
-						"url": { "raw": "{{customerServiceUrl}}/api/customers", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers"] }
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers",
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers"
+							]
+						}
 					}
 				}
 			]
@@ -498,7 +923,17 @@
 					"request": {
 						"method": "GET",
 						"header": [],
-						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me",
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -506,13 +941,33 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('unauthorized', () => pm.response.to.have.status(401));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('unauthorized', () => pm.response.to.have.status(401));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer not-a-real-jwt" }],
-						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer not-a-real-jwt"
+							}
+						],
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me",
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -531,11 +986,22 @@
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
 						"url": {
 							"raw": "{{customerServiceUrl}}/api/customers/{{customerId}}",
-							"host": ["{{customerServiceUrl}}"],
-							"path": ["api", "customers", "{{customerId}}"]
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"{{customerId}}"
+							]
 						},
 						"description": "customer@fdp.test lacks user:read (see docker/keycloak/fdp-realm.json) — this is CUSTOMER, not ADMIN, so it's rejected even for its OWN id fetched via the admin route, since that route doesn't special-case self-lookup."
 					}
@@ -545,13 +1011,32 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('forbidden', () => pm.response.to.have.status(403));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('forbidden', () => pm.response.to.have.status(403));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-						"url": { "raw": "{{customerServiceUrl}}/api/customers", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers"] }
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers",
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers"
+							]
+						}
 					}
 				}
 			]

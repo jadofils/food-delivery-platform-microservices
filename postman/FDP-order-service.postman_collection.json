@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "fdp-order-service-collection",
 		"name": "FDP - order-service (sync + async demo)",
-		"description": "Exercises order-service end to end: real OpenFeign calls to customer-service and restaurant-service (sync), Resilience4j circuit breaker/retry/bulkhead protecting both, and a real RabbitMQ publish (async) on every placement/cancellation. Requires `customer-service` (:8082), `restaurant-service` (:8083), `order-service` (:8084), `discovery-server` (:8761), and `config-server` (:8888) all running — see RUNNING.md. Import the sibling `FDP.postman_environment.json` and select it before running.\n\nRun order: **1. Get Tokens**, then **2. Prerequisite Setup** (self-contained — registers its own customer/address/restaurant/menu item so this collection doesn't depend on the other two having run first), then **3. Place & Manage Orders**, then **4. Negative / Security Tests**.\n\nTo see the resilience story for yourself: stop `restaurant-service` (see RUNNING.md's \"Stopping a backgrounded/jar-run service\"), re-run \"Place Order\" — expect a clean `503 SERVICE_UNAVAILABLE` in a few seconds, not a hang. Restart it, wait ~10s (the circuit breaker's configured wait-duration-in-open-state), and it recovers on its own.\n\nTo see the async story: after \"Place Order\" succeeds, open RabbitMQ's management UI (http://localhost:15672, login fdp/fdp) → Queues → `order-events.inspection` → Get messages — a real `OrderPlacedEvent` JSON payload is sitting there.",
+		"description": "Exercises order-service end to end: real OpenFeign calls to customer-service and restaurant-service (sync), Resilience4j circuit breaker/retry/bulkhead protecting both, and a real RabbitMQ publish (async) on every placement/cancellation. Every domain service binds a dynamic, OS-assigned port (`server.port=0`) and is reached exclusively through `api-gateway` on `:8080` -- this collection's `...ServiceUrl` variables already point at the gateway, never at a service's own (unadvertised) port. Requires `discovery-server` (:8761, fixed), `api-gateway` (:8080, fixed), and `customer-service`/`restaurant-service`/`order-service` all running and registered in Eureka — see RUNNING.md. Import the sibling `FDP.postman_environment.json` and select it before running.\n\nRun order: **1. Get Tokens**, then **2. Prerequisite Setup** (self-contained — registers its own customer/address/restaurant/menu item so this collection doesn't depend on the other two having run first), then **3. Place & Manage Orders**, then **4. Negative / Security Tests**.\n\nTo see the resilience story for yourself: stop `restaurant-service` (see RUNNING.md's \"Stopping a backgrounded/jar-run service\" — its port is dynamic, look it up via Eureka first), re-run \"Place Order\" — expect a clean `503 SERVICE_UNAVAILABLE` in a few seconds, not a hang. Restart it, wait ~10s (the circuit breaker's configured wait-duration-in-open-state), and it recovers on its own.\n\nTo see the async story: after \"Place Order\" succeeds, open RabbitMQ's management UI (http://localhost:15672, login fdp/fdp) → Queues → `order-events.inspection` → Get messages — a real `OrderPlacedEvent` JSON payload is sitting there.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
@@ -26,20 +26,45 @@
 					],
 					"request": {
 						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
 						"body": {
 							"mode": "urlencoded",
 							"urlencoded": [
-								{ "key": "grant_type", "value": "password" },
-								{ "key": "client_id", "value": "{{clientId}}" },
-								{ "key": "username", "value": "{{customerUsername}}" },
-								{ "key": "password", "value": "{{customerPassword}}" }
+								{
+									"key": "grant_type",
+									"value": "password"
+								},
+								{
+									"key": "client_id",
+									"value": "{{clientId}}"
+								},
+								{
+									"key": "username",
+									"value": "{{customerUsername}}"
+								},
+								{
+									"key": "password",
+									"value": "{{customerPassword}}"
+								}
 							]
 						},
 						"url": {
 							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
-							"host": ["{{keycloakUrl}}"],
-							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+							"host": [
+								"{{keycloakUrl}}"
+							],
+							"path": [
+								"realms",
+								"{{realm}}",
+								"protocol",
+								"openid-connect",
+								"token"
+							]
 						}
 					}
 				},
@@ -60,20 +85,45 @@
 					],
 					"request": {
 						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
 						"body": {
 							"mode": "urlencoded",
 							"urlencoded": [
-								{ "key": "grant_type", "value": "password" },
-								{ "key": "client_id", "value": "{{clientId}}" },
-								{ "key": "username", "value": "{{restaurantOwnerUsername}}" },
-								{ "key": "password", "value": "{{restaurantOwnerPassword}}" }
+								{
+									"key": "grant_type",
+									"value": "password"
+								},
+								{
+									"key": "client_id",
+									"value": "{{clientId}}"
+								},
+								{
+									"key": "username",
+									"value": "{{restaurantOwnerUsername}}"
+								},
+								{
+									"key": "password",
+									"value": "{{restaurantOwnerPassword}}"
+								}
 							]
 						},
 						"url": {
 							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
-							"host": ["{{keycloakUrl}}"],
-							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+							"host": [
+								"{{keycloakUrl}}"
+							],
+							"path": [
+								"realms",
+								"{{realm}}",
+								"protocol",
+								"openid-connect",
+								"token"
+							]
 						}
 					}
 				},
@@ -94,20 +144,45 @@
 					],
 					"request": {
 						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
 						"body": {
 							"mode": "urlencoded",
 							"urlencoded": [
-								{ "key": "grant_type", "value": "password" },
-								{ "key": "client_id", "value": "{{clientId}}" },
-								{ "key": "username", "value": "{{deliveryAgentUsername}}" },
-								{ "key": "password", "value": "{{deliveryAgentPassword}}" }
+								{
+									"key": "grant_type",
+									"value": "password"
+								},
+								{
+									"key": "client_id",
+									"value": "{{clientId}}"
+								},
+								{
+									"key": "username",
+									"value": "{{deliveryAgentUsername}}"
+								},
+								{
+									"key": "password",
+									"value": "{{deliveryAgentPassword}}"
+								}
 							]
 						},
 						"url": {
 							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
-							"host": ["{{keycloakUrl}}"],
-							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+							"host": [
+								"{{keycloakUrl}}"
+							],
+							"path": [
+								"realms",
+								"{{realm}}",
+								"protocol",
+								"openid-connect",
+								"token"
+							]
 						}
 					}
 				}
@@ -122,17 +197,46 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('created or already exists', () => [200,201,409].includes(pm.response.code));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('created or already exists', () => [200,201,409].includes(pm.response.code));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "POST",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
-						"body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"+15551234567\"\n}", "options": { "raw": { "language": "json" } } },
-						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phoneNumber\": \"+15551234567\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me",
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -152,15 +256,36 @@
 					"request": {
 						"method": "POST",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n  \"label\": \"Home\",\n  \"street\": \"12 Kigali Ave\",\n  \"city\": \"Kigali\",\n  \"state\": \"Kigali City\",\n  \"postalCode\": \"00000\",\n  \"country\": \"Rwanda\",\n  \"isDefault\": true\n}",
-							"options": { "raw": { "language": "json" } }
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
 						},
-						"url": { "raw": "{{customerServiceUrl}}/api/customers/me/addresses", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me", "addresses"] }
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me/addresses",
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me",
+								"addresses"
+							]
+						}
 					}
 				},
 				{
@@ -168,21 +293,47 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('created or already exists', () => [200,201,409].includes(pm.response.code));", "if (pm.response.code === 201) { pm.environment.set('restaurantId', pm.response.json().id); }"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('created or already exists', () => [200,201,409].includes(pm.response.code));",
+									"if (pm.response.code === 201) { pm.environment.set('restaurantId', pm.response.json().id); }"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "POST",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{restaurantOwnerToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{restaurantOwnerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n  \"name\": \"Kigali Grill\",\n  \"description\": \"Grilled specialties\",\n  \"cuisineType\": \"Rwandan\",\n  \"street\": \"1 Downtown Ave\",\n  \"city\": \"Kigali\",\n  \"state\": \"Kigali City\",\n  \"postalCode\": \"00000\",\n  \"country\": \"Rwanda\"\n}",
-							"options": { "raw": { "language": "json" } }
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
 						},
-						"url": { "raw": "{{restaurantServiceUrl}}/api/restaurants/me", "host": ["{{restaurantServiceUrl}}"], "path": ["api", "restaurants", "me"] }
+						"url": {
+							"raw": "{{restaurantServiceUrl}}/api/restaurants/me",
+							"host": [
+								"{{restaurantServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"restaurants",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -190,13 +341,82 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.environment.set('restaurantId', pm.response.json().id);"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));",
+									"pm.environment.set('restaurantId', pm.response.json().id);"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{restaurantOwnerToken}}" }],
-						"url": { "raw": "{{restaurantServiceUrl}}/api/restaurants/me", "host": ["{{restaurantServiceUrl}}"], "path": ["api", "restaurants", "me"] }
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{restaurantOwnerToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{restaurantServiceUrl}}/api/restaurants/me",
+							"host": [
+								"{{restaurantServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"restaurants",
+								"me"
+							]
+						}
+					}
+				},
+				{
+					"name": "Make Sure The Restaurant Is Open",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));",
+									"pm.test('open', () => pm.expect(pm.response.json().isOpen).to.eql(true));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{restaurantOwnerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Kigali Grill\",\n  \"description\": \"Grilled specialties\",\n  \"cuisineType\": \"Rwandan\",\n  \"street\": \"1 Downtown Ave\",\n  \"city\": \"Kigali\",\n  \"state\": \"Kigali City\",\n  \"postalCode\": \"00000\",\n  \"country\": \"Rwanda\",\n  \"isOpen\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{restaurantServiceUrl}}/api/restaurants/me",
+							"host": [
+								"{{restaurantServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"restaurants",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -216,15 +436,36 @@
 					"request": {
 						"method": "POST",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{restaurantOwnerToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{restaurantOwnerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n  \"name\": \"Brochette\",\n  \"description\": \"Grilled skewers\",\n  \"price\": 5.50,\n  \"category\": \"Mains\",\n  \"available\": true\n}",
-							"options": { "raw": { "language": "json" } }
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
 						},
-						"url": { "raw": "{{restaurantServiceUrl}}/api/restaurants/me/menu-items", "host": ["{{restaurantServiceUrl}}"], "path": ["api", "restaurants", "me", "menu-items"] }
+						"url": {
+							"raw": "{{restaurantServiceUrl}}/api/restaurants/me/menu-items",
+							"host": [
+								"{{restaurantServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"restaurants",
+								"me",
+								"menu-items"
+							]
+						}
 					}
 				}
 			]
@@ -253,15 +494,35 @@
 					"request": {
 						"method": "POST",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n  \"restaurantId\": {{restaurantId}},\n  \"deliveryAddressId\": {{addressId}},\n  \"items\": [\n    {\"menuItemId\": {{menuItemId}}, \"quantity\": 2}\n  ]\n}",
-							"options": { "raw": { "language": "json" } }
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
 						},
-						"url": { "raw": "{{orderServiceUrl}}/api/orders/me", "host": ["{{orderServiceUrl}}"], "path": ["api", "orders", "me"] }
+						"url": {
+							"raw": "{{orderServiceUrl}}/api/orders/me",
+							"host": [
+								"{{orderServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -269,13 +530,34 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.test('paged shape', () => pm.expect(pm.response.json()).to.have.property('content'));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));",
+									"pm.test('paged shape', () => pm.expect(pm.response.json()).to.have.property('content'));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-						"url": { "raw": "{{orderServiceUrl}}/api/orders/me", "host": ["{{orderServiceUrl}}"], "path": ["api", "orders", "me"] }
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{orderServiceUrl}}/api/orders/me",
+							"host": [
+								"{{orderServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -283,16 +565,35 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.test('has items', () => pm.expect(pm.response.json().items.length).to.be.above(0));", "pm.test('has deliveryStatus field (null until delivery-service creates the assignment, or if it is down)', () => pm.expect(pm.response.json()).to.have.property('deliveryStatus'));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));",
+									"pm.test('has items', () => pm.expect(pm.response.json().items.length).to.be.above(0));",
+									"pm.test('has deliveryStatus field (null until delivery-service creates the assignment, or if it is down)', () => pm.expect(pm.response.json()).to.have.property('deliveryStatus'));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
 						"url": {
 							"raw": "{{orderServiceUrl}}/api/orders/me/{{orderId}}",
-							"host": ["{{orderServiceUrl}}"],
-							"path": ["api", "orders", "me", "{{orderId}}"]
+							"host": [
+								"{{orderServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"me",
+								"{{orderId}}"
+							]
 						}
 					}
 				},
@@ -301,16 +602,35 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.test('now cancelled', () => pm.expect(pm.response.json().status).to.eql('CANCELLED'));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));",
+									"pm.test('now cancelled', () => pm.expect(pm.response.json().status).to.eql('CANCELLED'));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "POST",
-						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
 						"url": {
 							"raw": "{{orderServiceUrl}}/api/orders/me/{{orderId}}/cancel",
-							"host": ["{{orderServiceUrl}}"],
-							"path": ["api", "orders", "me", "{{orderId}}", "cancel"]
+							"host": [
+								"{{orderServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"me",
+								"{{orderId}}",
+								"cancel"
+							]
 						}
 					}
 				},
@@ -319,16 +639,34 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('conflict', () => pm.response.to.have.status(409));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('conflict', () => pm.response.to.have.status(409));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "POST",
-						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
 						"url": {
 							"raw": "{{orderServiceUrl}}/api/orders/me/{{orderId}}/cancel",
-							"host": ["{{orderServiceUrl}}"],
-							"path": ["api", "orders", "me", "{{orderId}}", "cancel"]
+							"host": [
+								"{{orderServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"me",
+								"{{orderId}}",
+								"cancel"
+							]
 						}
 					}
 				}
@@ -342,13 +680,28 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('unauthorized', () => pm.response.to.have.status(401));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('unauthorized', () => pm.response.to.have.status(401));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
 						"header": [],
-						"url": { "raw": "{{orderServiceUrl}}/api/orders/me", "host": ["{{orderServiceUrl}}"], "path": ["api", "orders", "me"] }
+						"url": {
+							"raw": "{{orderServiceUrl}}/api/orders/me",
+							"host": [
+								"{{orderServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -356,21 +709,46 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('forbidden -- lacks order:create', () => pm.response.to.have.status(403));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('forbidden -- lacks order:create', () => pm.response.to.have.status(403));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "POST",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{deliveryAgentToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{deliveryAgentToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n  \"restaurantId\": {{restaurantId}},\n  \"deliveryAddressId\": {{addressId}},\n  \"items\": [{\"menuItemId\": {{menuItemId}}, \"quantity\": 1}]\n}",
-							"options": { "raw": { "language": "json" } }
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
 						},
-						"url": { "raw": "{{orderServiceUrl}}/api/orders/me", "host": ["{{orderServiceUrl}}"], "path": ["api", "orders", "me"] }
+						"url": {
+							"raw": "{{orderServiceUrl}}/api/orders/me",
+							"host": [
+								"{{orderServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"me"
+							]
+						}
 					},
 					"description": "delivery-agent@fdp.test's role set (delivery:status:update, delivery:read, order:read) doesn't include order:create -- see docker/keycloak/fdp-realm.json."
 				},
@@ -379,21 +757,46 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('validation failed', () => pm.response.to.have.status(400));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('validation failed', () => pm.response.to.have.status(400));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "POST",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n  \"restaurantId\": {{restaurantId}},\n  \"deliveryAddressId\": {{addressId}},\n  \"items\": []\n}",
-							"options": { "raw": { "language": "json" } }
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
 						},
-						"url": { "raw": "{{orderServiceUrl}}/api/orders/me", "host": ["{{orderServiceUrl}}"], "path": ["api", "orders", "me"] }
+						"url": {
+							"raw": "{{orderServiceUrl}}/api/orders/me",
+							"host": [
+								"{{orderServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -401,16 +804,33 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('not found for a different owner', () => pm.response.to.have.status(404));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('not found for a different owner', () => pm.response.to.have.status(404));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{deliveryAgentToken}}" }],
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{deliveryAgentToken}}"
+							}
+						],
 						"url": {
 							"raw": "{{orderServiceUrl}}/api/orders/me/{{orderId}}",
-							"host": ["{{orderServiceUrl}}"],
-							"path": ["api", "orders", "me", "{{orderId}}"]
+							"host": [
+								"{{orderServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"me",
+								"{{orderId}}"
+							]
 						},
 						"description": "delivery-agent has order:read (so this isn't a 403), but this order doesn't belong to them -- the ownership check 404s the same way it would for a genuinely different customer."
 					}

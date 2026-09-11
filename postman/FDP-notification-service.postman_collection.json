@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "fdp-notification-service-collection",
 		"name": "FDP - notification-service (MongoDB + async events demo)",
-		"description": "notification-service has no write API of its own -- it only consumes order-service's RabbitMQ events (RULES.md §6) and records them in MongoDB (`notification_db`, RULES.md §5). This collection places (and cancels) a real order through order-service to generate real `OrderPlacedEvent`/`OrderCancelledEvent` messages, then reads the resulting notifications back through notification-service's own REST API. Requires `customer-service` (:8082), `restaurant-service` (:8083), `order-service` (:8084), `notification-service` (:8086), `discovery-server` (:8761), and `config-server` (:8888) all running -- see RUNNING.md. Import the sibling `FDP.postman_environment.json` and select it before running.\n\nRun order: **1. Get Tokens**, then **2. Prerequisite Setup** (self-contained -- registers its own customer/address/restaurant/menu item so this collection doesn't depend on the other collections having run first), then **3. Trigger Events via Order Placement**, then **4. Read Notifications**, then **5. Negative / Security Tests**.\n\nA small delay is built into the run (Newman: pass `--delay-request 800` for extra margin) because event consumption is asynchronous -- the notification typically lands in MongoDB within a couple hundred milliseconds of the order-service request returning, but it is never simultaneous with it.\n\nTo see the idempotency guard for yourself: check RabbitMQ's management UI (http://localhost:15672, login fdp/fdp) -- `notification-service.order-events` is bound to `fdp.order-events` with pattern `order.#`; publishing the exact same message twice (matching `eventId`) produces only one notification record, because `NotificationRecord.eventId` carries a unique index and a losing concurrent write is caught and ignored, not just short-circuited by an application-level check.",
+		"description": "notification-service has no write API of its own -- it only consumes order-service's RabbitMQ events (RULES.md §6) and records them in MongoDB (`notification_db`, RULES.md §5). This collection places (and cancels) a real order through order-service to generate real `OrderPlacedEvent`/`OrderCancelledEvent` messages, then reads the resulting notifications back through notification-service's own REST API. Every domain service binds a dynamic, OS-assigned port (`server.port=0`) and is reached exclusively through `api-gateway` on `:8080` -- this collection's `...ServiceUrl` variables already point at the gateway, never at a service's own (unadvertised) port. Requires `discovery-server` (:8761, fixed), `api-gateway` (:8080, fixed), and `customer-service`/`restaurant-service`/`order-service`/`notification-service` all running and registered in Eureka -- see RUNNING.md. Import the sibling `FDP.postman_environment.json` and select it before running.\n\nRun order: **1. Get Tokens**, then **2. Prerequisite Setup** (self-contained -- registers its own customer/address/restaurant/menu item so this collection doesn't depend on the other collections having run first), then **3. Trigger Events via Order Placement**, then **4. Read Notifications**, then **5. Negative / Security Tests**.\n\nA small delay is built into the run (Newman: pass `--delay-request 800` for extra margin) because event consumption is asynchronous -- the notification typically lands in MongoDB within a couple hundred milliseconds of the order-service request returning, but it is never simultaneous with it.\n\nTo see the idempotency guard for yourself: check RabbitMQ's management UI (http://localhost:15672, login fdp/fdp) -- `notification-service.order-events` is bound to `fdp.order-events` with pattern `order.#`; publishing the exact same message twice (matching `eventId`) produces only one notification record, because `NotificationRecord.eventId` carries a unique index and a losing concurrent write is caught and ignored, not just short-circuited by an application-level check.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
@@ -26,20 +26,45 @@
 					],
 					"request": {
 						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
 						"body": {
 							"mode": "urlencoded",
 							"urlencoded": [
-								{ "key": "grant_type", "value": "password" },
-								{ "key": "client_id", "value": "{{clientId}}" },
-								{ "key": "username", "value": "{{customerUsername}}" },
-								{ "key": "password", "value": "{{customerPassword}}" }
+								{
+									"key": "grant_type",
+									"value": "password"
+								},
+								{
+									"key": "client_id",
+									"value": "{{clientId}}"
+								},
+								{
+									"key": "username",
+									"value": "{{customerUsername}}"
+								},
+								{
+									"key": "password",
+									"value": "{{customerPassword}}"
+								}
 							]
 						},
 						"url": {
 							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
-							"host": ["{{keycloakUrl}}"],
-							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+							"host": [
+								"{{keycloakUrl}}"
+							],
+							"path": [
+								"realms",
+								"{{realm}}",
+								"protocol",
+								"openid-connect",
+								"token"
+							]
 						}
 					}
 				},
@@ -60,20 +85,45 @@
 					],
 					"request": {
 						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
 						"body": {
 							"mode": "urlencoded",
 							"urlencoded": [
-								{ "key": "grant_type", "value": "password" },
-								{ "key": "client_id", "value": "{{clientId}}" },
-								{ "key": "username", "value": "{{restaurantOwnerUsername}}" },
-								{ "key": "password", "value": "{{restaurantOwnerPassword}}" }
+								{
+									"key": "grant_type",
+									"value": "password"
+								},
+								{
+									"key": "client_id",
+									"value": "{{clientId}}"
+								},
+								{
+									"key": "username",
+									"value": "{{restaurantOwnerUsername}}"
+								},
+								{
+									"key": "password",
+									"value": "{{restaurantOwnerPassword}}"
+								}
 							]
 						},
 						"url": {
 							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
-							"host": ["{{keycloakUrl}}"],
-							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+							"host": [
+								"{{keycloakUrl}}"
+							],
+							"path": [
+								"realms",
+								"{{realm}}",
+								"protocol",
+								"openid-connect",
+								"token"
+							]
 						}
 					}
 				},
@@ -94,20 +144,45 @@
 					],
 					"request": {
 						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
 						"body": {
 							"mode": "urlencoded",
 							"urlencoded": [
-								{ "key": "grant_type", "value": "password" },
-								{ "key": "client_id", "value": "{{clientId}}" },
-								{ "key": "username", "value": "{{adminUsername}}" },
-								{ "key": "password", "value": "{{adminPassword}}" }
+								{
+									"key": "grant_type",
+									"value": "password"
+								},
+								{
+									"key": "client_id",
+									"value": "{{clientId}}"
+								},
+								{
+									"key": "username",
+									"value": "{{adminUsername}}"
+								},
+								{
+									"key": "password",
+									"value": "{{adminPassword}}"
+								}
 							]
 						},
 						"url": {
 							"raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
-							"host": ["{{keycloakUrl}}"],
-							"path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+							"host": [
+								"{{keycloakUrl}}"
+							],
+							"path": [
+								"realms",
+								"{{realm}}",
+								"protocol",
+								"openid-connect",
+								"token"
+							]
 						}
 					}
 				}
@@ -122,17 +197,46 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('created or already exists', () => [200,201,409].includes(pm.response.code));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('created or already exists', () => [200,201,409].includes(pm.response.code));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "POST",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
-						"body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"+15551234567\"\n}", "options": { "raw": { "language": "json" } } },
-						"url": { "raw": "{{customerServiceUrl}}/api/customers/me", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me"] }
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phoneNumber\": \"+15551234567\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me",
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -152,15 +256,36 @@
 					"request": {
 						"method": "POST",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n  \"label\": \"Home\",\n  \"street\": \"12 Kigali Ave\",\n  \"city\": \"Kigali\",\n  \"state\": \"Kigali City\",\n  \"postalCode\": \"00000\",\n  \"country\": \"Rwanda\",\n  \"isDefault\": true\n}",
-							"options": { "raw": { "language": "json" } }
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
 						},
-						"url": { "raw": "{{customerServiceUrl}}/api/customers/me/addresses", "host": ["{{customerServiceUrl}}"], "path": ["api", "customers", "me", "addresses"] }
+						"url": {
+							"raw": "{{customerServiceUrl}}/api/customers/me/addresses",
+							"host": [
+								"{{customerServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"customers",
+								"me",
+								"addresses"
+							]
+						}
 					}
 				},
 				{
@@ -168,21 +293,47 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('created or already exists', () => [200,201,409].includes(pm.response.code));", "if (pm.response.code === 201) { pm.environment.set('restaurantId', pm.response.json().id); }"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('created or already exists', () => [200,201,409].includes(pm.response.code));",
+									"if (pm.response.code === 201) { pm.environment.set('restaurantId', pm.response.json().id); }"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "POST",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{restaurantOwnerToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{restaurantOwnerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n  \"name\": \"Kigali Grill\",\n  \"description\": \"Grilled specialties\",\n  \"cuisineType\": \"Rwandan\",\n  \"street\": \"1 Downtown Ave\",\n  \"city\": \"Kigali\",\n  \"state\": \"Kigali City\",\n  \"postalCode\": \"00000\",\n  \"country\": \"Rwanda\"\n}",
-							"options": { "raw": { "language": "json" } }
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
 						},
-						"url": { "raw": "{{restaurantServiceUrl}}/api/restaurants/me", "host": ["{{restaurantServiceUrl}}"], "path": ["api", "restaurants", "me"] }
+						"url": {
+							"raw": "{{restaurantServiceUrl}}/api/restaurants/me",
+							"host": [
+								"{{restaurantServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"restaurants",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -190,13 +341,82 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.environment.set('restaurantId', pm.response.json().id);"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));",
+									"pm.environment.set('restaurantId', pm.response.json().id);"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{restaurantOwnerToken}}" }],
-						"url": { "raw": "{{restaurantServiceUrl}}/api/restaurants/me", "host": ["{{restaurantServiceUrl}}"], "path": ["api", "restaurants", "me"] }
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{restaurantOwnerToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{restaurantServiceUrl}}/api/restaurants/me",
+							"host": [
+								"{{restaurantServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"restaurants",
+								"me"
+							]
+						}
+					}
+				},
+				{
+					"name": "Make Sure The Restaurant Is Open",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));",
+									"pm.test('open', () => pm.expect(pm.response.json().isOpen).to.eql(true));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{restaurantOwnerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Kigali Grill\",\n  \"description\": \"Grilled specialties\",\n  \"cuisineType\": \"Rwandan\",\n  \"street\": \"1 Downtown Ave\",\n  \"city\": \"Kigali\",\n  \"state\": \"Kigali City\",\n  \"postalCode\": \"00000\",\n  \"country\": \"Rwanda\",\n  \"isOpen\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{restaurantServiceUrl}}/api/restaurants/me",
+							"host": [
+								"{{restaurantServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"restaurants",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -216,15 +436,36 @@
 					"request": {
 						"method": "POST",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{restaurantOwnerToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{restaurantOwnerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n  \"name\": \"Brochette\",\n  \"description\": \"Grilled skewers\",\n  \"price\": 5.50,\n  \"category\": \"Mains\",\n  \"available\": true\n}",
-							"options": { "raw": { "language": "json" } }
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
 						},
-						"url": { "raw": "{{restaurantServiceUrl}}/api/restaurants/me/menu-items", "host": ["{{restaurantServiceUrl}}"], "path": ["api", "restaurants", "me", "menu-items"] }
+						"url": {
+							"raw": "{{restaurantServiceUrl}}/api/restaurants/me/menu-items",
+							"host": [
+								"{{restaurantServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"restaurants",
+								"me",
+								"menu-items"
+							]
+						}
 					}
 				}
 			]
@@ -252,15 +493,35 @@
 					"request": {
 						"method": "POST",
 						"header": [
-							{ "key": "Authorization", "value": "Bearer {{customerToken}}" },
-							{ "key": "Content-Type", "value": "application/json" }
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
 						],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n  \"restaurantId\": {{restaurantId}},\n  \"deliveryAddressId\": {{addressId}},\n  \"items\": [\n    {\"menuItemId\": {{menuItemId}}, \"quantity\": 2}\n  ]\n}",
-							"options": { "raw": { "language": "json" } }
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
 						},
-						"url": { "raw": "{{orderServiceUrl}}/api/orders/me", "host": ["{{orderServiceUrl}}"], "path": ["api", "orders", "me"] }
+						"url": {
+							"raw": "{{orderServiceUrl}}/api/orders/me",
+							"host": [
+								"{{orderServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -268,16 +529,35 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.test('now cancelled', () => pm.expect(pm.response.json().status).to.eql('CANCELLED'));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));",
+									"pm.test('now cancelled', () => pm.expect(pm.response.json().status).to.eql('CANCELLED'));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "POST",
-						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
 						"url": {
 							"raw": "{{orderServiceUrl}}/api/orders/me/{{orderId}}/cancel",
-							"host": ["{{orderServiceUrl}}"],
-							"path": ["api", "orders", "me", "{{orderId}}", "cancel"]
+							"host": [
+								"{{orderServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"me",
+								"{{orderId}}",
+								"cancel"
+							]
 						}
 					}
 				}
@@ -308,8 +588,23 @@
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-						"url": { "raw": "{{notificationServiceUrl}}/api/notifications/me", "host": ["{{notificationServiceUrl}}"], "path": ["api", "notifications", "me"] }
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{notificationServiceUrl}}/api/notifications/me",
+							"host": [
+								"{{notificationServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"notifications",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -317,13 +612,33 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "pm.test('paged shape', () => pm.expect(pm.response.json()).to.have.property('content'));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ok', () => pm.response.to.have.status(200));",
+									"pm.test('paged shape', () => pm.expect(pm.response.json()).to.have.property('content'));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
-						"url": { "raw": "{{notificationServiceUrl}}/api/notifications", "host": ["{{notificationServiceUrl}}"], "path": ["api", "notifications"] }
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{notificationServiceUrl}}/api/notifications",
+							"host": [
+								"{{notificationServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"notifications"
+							]
+						}
 					}
 				}
 			]
@@ -336,13 +651,28 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('unauthorized', () => pm.response.to.have.status(401));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('unauthorized', () => pm.response.to.have.status(401));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
 						"header": [],
-						"url": { "raw": "{{notificationServiceUrl}}/api/notifications/me", "host": ["{{notificationServiceUrl}}"], "path": ["api", "notifications", "me"] }
+						"url": {
+							"raw": "{{notificationServiceUrl}}/api/notifications/me",
+							"host": [
+								"{{notificationServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"notifications",
+								"me"
+							]
+						}
 					}
 				},
 				{
@@ -350,13 +680,32 @@
 					"event": [
 						{
 							"listen": "test",
-							"script": { "type": "text/javascript", "exec": ["pm.test('forbidden -- lacks notification:read', () => pm.response.to.have.status(403));"] }
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('forbidden -- lacks notification:read', () => pm.response.to.have.status(403));"
+								]
+							}
 						}
 					],
 					"request": {
 						"method": "GET",
-						"header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-						"url": { "raw": "{{notificationServiceUrl}}/api/notifications", "host": ["{{notificationServiceUrl}}"], "path": ["api", "notifications"] },
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{notificationServiceUrl}}/api/notifications",
+							"host": [
+								"{{notificationServiceUrl}}"
+							],
+							"path": [
+								"api",
+								"notifications"
+							]
+						},
 						"description": "customer@fdp.test's role set doesn't include notification:read -- only ADMIN carries that permission (docker/keycloak/fdp-realm.json)."
 					}
 				}
