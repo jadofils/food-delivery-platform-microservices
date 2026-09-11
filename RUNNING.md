@@ -1,8 +1,8 @@
 # Running FDP locally
 
 A practical reference for starting **infrastructure** (Postgres, MongoDB, RabbitMQ, Redis,
-Keycloak — all Docker containers) and **FDP services** (config-server, discovery-server,
-customer-service, … — currently run via Maven, not Docker; see [Naming & tagging](#naming--tagging)
+Keycloak — all Docker containers) and **FDP services** (discovery-server, customer-service, … —
+currently run via Maven, not Docker; see [Naming & tagging](#naming--tagging)
 for why) — one at a time, a few at a time, or everything that's currently implemented.
 
 See `docs/RULES.md` §2 for the canonical service/port inventory and `docs/SPRINTS.md` for what's
@@ -22,7 +22,6 @@ cover that.
 | `redis` | Docker | `fdp-redis` | 6379 (or `REDIS_PORT` — see Troubleshooting if 6379 is already taken on your machine) | Infra — live, in real use by `restaurant-service` (caching) |
 | `keycloak` | Docker | `fdp-keycloak` | 8180 | Infra — live, identity provider |
 | `zipkin` | Docker | `fdp-zipkin` | 9411 | Infra — live, in real use by all five domain services (distributed tracing) |
-| `config-server` | Maven (`spring-boot:run`) | `config-server` | 8888 (fixed) | **Implemented** |
 | `discovery-server` | Maven | `discovery-server` | 8761 (fixed) | **Implemented** |
 | `customer-service` | Maven | `customer-service` | dynamic — see below | **Implemented** (needs `postgres` + `keycloak`) |
 | `restaurant-service` | Maven | `restaurant-service` | dynamic — see below | **Implemented** (needs `postgres`, `keycloak`, `redis`) |
@@ -155,14 +154,12 @@ hand, background them instead:
 ```powershell
 # PowerShell -- each Start-Process opens its own window you can still see/close individually
 Start-Process powershell -ArgumentList '-NoExit','-Command','.\mvnw.cmd -pl discovery-server -am spring-boot:run'
-Start-Process powershell -ArgumentList '-NoExit','-Command','.\mvnw.cmd -pl config-server -am spring-boot:run'
 Start-Process powershell -ArgumentList '-NoExit','-Command','.\mvnw.cmd -pl customer-service -am spring-boot:run'
 Start-Process powershell -ArgumentList '-NoExit','-Command','.\mvnw.cmd -pl restaurant-service -am spring-boot:run'
 ```
 ```bash
 # bash -- backgrounds each, logs redirected to /tmp so the terminal stays free
 (./mvnw -pl discovery-server  -am spring-boot:run > /tmp/discovery-server.log  2>&1 &)
-(./mvnw -pl config-server     -am spring-boot:run > /tmp/config-server.log     2>&1 &)
 (./mvnw -pl customer-service  -am spring-boot:run > /tmp/customer-service.log  2>&1 &)
 (./mvnw -pl restaurant-service -am spring-boot:run > /tmp/restaurant-service.log 2>&1 &)
 # tail -f /tmp/customer-service.log   # to watch one of them
@@ -181,7 +178,7 @@ java -jar customer-service/target/customer-service-0.0.1-SNAPSHOT.jar
 ```
 
 ### Stopping a backgrounded/jar-run service
-`config-server`/`discovery-server`/`api-gateway` are on their fixed ports; find what's listening,
+`discovery-server`/`api-gateway` are on their fixed ports; find what's listening,
 then stop that process:
 ```powershell
 Get-NetTCPConnection -LocalPort 8080 | Select-Object -ExpandProperty OwningProcess
@@ -199,9 +196,9 @@ log line (`Tomcat started on port <N>`) already has it, if that terminal is stil
 
 ## Swagger / OpenAPI docs
 
-Only services with real business endpoints have Swagger UI — `config-server` and
-`discovery-server` are pure infrastructure with no `springdoc-openapi` dependency, so there's
-nothing to browse there beyond what's listed below instead.
+Only services with real business endpoints have Swagger UI — `discovery-server` is pure
+infrastructure with no `springdoc-openapi` dependency, so there's nothing to browse there beyond
+what's listed below instead.
 
 **A known gap, not an oversight:** `api-gateway` has no route for `/swagger-ui/**` or
 `/v3/api-docs/**` (only `/api/**` paths are routed — see `docs/services/api-gateway.md`), and each
@@ -220,7 +217,6 @@ curl -s http://localhost:8761/eureka/apps/CUSTOMER-SERVICE -H "Accept: applicati
 | `delivery-service` | `/swagger-ui/index.html`, `/v3/api-docs` | No, same as above |
 | `notification-service` | `/swagger-ui/index.html`, `/v3/api-docs` | No, same as above |
 | `discovery-server` | — (no Swagger) | Eureka's own dashboard instead: http://localhost:8761 |
-| `config-server` | — (no Swagger) | It's a config-serving REST API, not a documented business API — see `curl` examples in `docs/services/config-server.md` |
 
 To call a real endpoint from Swagger UI once it's open: click **Authorize** (top right, padlock
 icon), paste a raw JWT (no `Bearer ` prefix — Swagger adds that itself), **Authorize**, **Close**.
@@ -292,7 +288,6 @@ Placement" folder places a real order through `order-service` on your behalf.
 docker compose up -d                                                     # all 6 infra containers
 ./mvnw clean package -DskipTests                                         # build every module once
 (java -jar discovery-server/target/discovery-server-0.0.1-SNAPSHOT.jar   > /tmp/discovery-server.log   2>&1 &)
-(java -jar config-server/target/config-server-0.0.1-SNAPSHOT.jar        > /tmp/config-server.log       2>&1 &)
 sleep 6
 (java -jar customer-service/target/customer-service-0.0.1-SNAPSHOT.jar  > /tmp/customer-service.log    2>&1 &)
 (java -jar restaurant-service/target/restaurant-service-0.0.1-SNAPSHOT.jar > /tmp/restaurant-service.log 2>&1 &)

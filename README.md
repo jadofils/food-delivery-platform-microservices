@@ -28,6 +28,7 @@ which user stories are done, partially done, or still open.
 - [Documentation map](#documentation-map)
 - [Running & testing the system](#running--testing-the-system)
 - [Operational endpoints — while the system is running](#operational-endpoints--while-the-system-is-running)
+- [Retired: config-server](#retired-config-server)
 - [Known gaps / roadmap](#known-gaps--roadmap)
 
 ---
@@ -47,8 +48,10 @@ solve:
 - A bug in delivery tracking could crash the entire application.
 
 **Where it ended up** — five domain services, each owning its own database and never reaching
-into another's schema (`docs/RULES.md` §5), plus three platform services (`api-gateway`,
-`discovery-server`, `config-server`) and Keycloak as the identity provider. This is a service
+into another's schema (`docs/RULES.md` §5), plus two platform services (`api-gateway`,
+`discovery-server`) and Keycloak as the identity provider. A `config-server` was also built in
+Sprint 1 as originally planned, but was later retired unused — no service ever actually pulled
+config from it (`docs/decisions/0002-retire-config-server.md`). This is a service
 *and* a scope decomposition: the original ask was four services; the actual system also splits
 notification-dispatch out of "Delivery and Notification" into its own `notification-service`
 (`docs/services/notification-service.md`), and replaces a planned custom `identity-service` with
@@ -72,7 +75,6 @@ flowchart TB
     subgraph Edge["Platform edge — fixed ports, well-known addresses"]
         GW["api-gateway :8080<br/>JWT validation • rate limiting • lb:// routing"]
         Eureka["discovery-server :8761<br/>Eureka registry"]
-        Config["config-server :8888<br/>externalized config (not yet consumed by any client)"]
     end
 
     KC["Keycloak :8180<br/>identity provider — issues/validates JWTs"]
@@ -163,9 +165,9 @@ flowchart TB
   Eureka at call time, which is what makes two instances of the same service able to run side by
   side under load balancing (verified live — see `docs/RULES.md` §2 and `RUNNING.md`'s "I want to
   see horizontal scaling for myself").
-- `config-server` is drawn but greyed out in spirit: it's implemented and reachable, but no service
-  actually pulls its configuration from it yet (`docs/SPRINTS.md` Sprint 1/2 notes) — a deliberate,
-  tracked scope cut, not a mistake in the diagram.
+- There's no `config-server` in this diagram on purpose — it existed from Sprint 1 through this
+  README's own earlier revisions, but was retired after going unused for its entire lifetime; see
+  [Retired: config-server](#retired-config-server) below.
 
 ---
 
@@ -445,7 +447,6 @@ a new JDK base image) — they are deliberately not generated from one another.
 
 | Service | Responsibility | Datastore | Port | Registers with Eureka |
 |---|---|---|---|---|
-| `config-server` | Centralized externalized configuration | — | `8888` (fixed) | no (nothing consumes it yet) |
 | `discovery-server` | Eureka service registry | — | `8761` (fixed) | is the registry |
 | `api-gateway` | Single entry point: routing, JWT validation, rate limiting | — | `8080` (fixed) | yes |
 | `customer-service` | Customer profiles, delivery addresses | `customer_db` (Postgres) | dynamic | yes |
@@ -572,15 +573,14 @@ off if you want the Testcontainers-backed suite to run as part of the build inst
 **Java processes only — Keycloak and Zipkin are already up from step 1** and stay up regardless of
 how many times you stop/restart anything below; they're Docker containers, not part of this list,
 and never need restarting alongside it (see [System architecture](#system-architecture) for the
-container-vs-JVM-process split). `discovery-server`/`config-server` first (the platform's spine), then the five domain services
+container-vs-JVM-process split). `discovery-server` first (the platform's spine), then the five domain services
 (order doesn't strictly matter between them, but `order-service` will retry its Feign calls to
 `customer-`/`restaurant-service` if they're not registered yet rather than fail hard), then
 `api-gateway` last, since it needs something registered in Eureka to route to:
 
 ```bash
 java -jar discovery-server/target/discovery-server-0.0.1-SNAPSHOT.jar > discovery-server.log 2>&1 &
-java -jar config-server/target/config-server-0.0.1-SNAPSHOT.jar     > config-server.log     2>&1 &
-# wait ~20s for both to report "Started ... Application" in their logs, then:
+# wait ~20s for it to report "Started ... Application" in its log, then:
 java -jar customer-service/target/customer-service-0.0.1-SNAPSHOT.jar         > customer-service.log     2>&1 &
 java -jar restaurant-service/target/restaurant-service-0.0.1-SNAPSHOT.jar     > restaurant-service.log   2>&1 &
 java -jar order-service/target/order-service-0.0.1-SNAPSHOT.jar               > order-service.log        2>&1 &
@@ -600,9 +600,8 @@ curl -s http://localhost:8761/eureka/apps -H "Accept: application/json" | grep -
 ```
 Expect `CUSTOMER-SERVICE`, `RESTAURANT-SERVICE`, `ORDER-SERVICE`, `DELIVERY-SERVICE`,
 `NOTIFICATION-SERVICE`, and `API-GATEWAY` — six names. (`discovery-server` is the registry, not a
-client of itself; `config-server` doesn't register since nothing consumes it yet — see
-[System architecture](#system-architecture).) Then confirm the gateway itself sees all of them as
-`UP`:
+client of itself — see [System architecture](#system-architecture).) Then confirm the gateway
+itself sees all of them as `UP`:
 ```bash
 curl -s http://localhost:8080/actuator/health | grep -o '"status":"UP"' | wc -l
 ```
@@ -734,7 +733,7 @@ curl -s http://localhost:8761/eureka/apps/CUSTOMER-SERVICE -H "Accept: applicati
 # then open http://localhost:<that port>/swagger-ui/index.html
 ```
 Works for `CUSTOMER-SERVICE`, `RESTAURANT-SERVICE`, `ORDER-SERVICE`, `DELIVERY-SERVICE`,
-`NOTIFICATION-SERVICE` — swap the name. `discovery-server`/`config-server`/`api-gateway` have no
+`NOTIFICATION-SERVICE` — swap the name. `discovery-server`/`api-gateway` have no
 Swagger UI (pure infra, or edge routing only — see [Service inventory](#service-inventory)). To
 call an endpoint from Swagger UI: **Authorize** (padlock icon) → paste the raw JWT from the
 Keycloak call above (no `Bearer ` prefix — Swagger adds that itself) → **Authorize** → **Close**.
@@ -778,6 +777,26 @@ exchange/queue/binding topology these queue names come from.
 
 ---
 
+## Retired: config-server
+
+A `config-server` module existed from Sprint 1 through most of this project's history —
+`@EnableConfigServer`, serving `application-{profile}.yml` on `:8888`, verified live at the time
+(`GET /application/default`/`.../docker` both correctly returned layered config). It was removed
+because it was never actually used: no domain service, not even `api-gateway` or
+`discovery-server`, ever added `spring.config.import`/`spring-cloud-starter-config` to pull
+configuration from it. Confirmed by grepping every service's `application.properties` before
+removal — the only match for that property was `config-server`'s own file.
+
+Every service's real configuration source was, and remains, its own local
+`application-{profile}.properties` plus environment variables / Docker secrets for anything
+sensitive — exactly what `docs/RULES.md` §1 factor 3 requires, just without a dedicated
+config-serving component in between. Full reasoning and consequences:
+[`docs/decisions/0002-retire-config-server.md`](docs/decisions/0002-retire-config-server.md).
+Port `8888` is retired, not reassigned (same treatment `docs/RULES.md` §2 already gives port
+`8081` after `identity-service`'s own retirement).
+
+---
+
 ## Known gaps / roadmap
 
 Tracked in `docs/SPRINTS.md`, not hidden:
@@ -785,8 +804,6 @@ Tracked in `docs/SPRINTS.md`, not hidden:
 - **Containerization (Sprint 7)** — neither a per-service `Dockerfile` nor Jib is wired up yet;
   only backing infrastructure runs in containers today. See
   [Containerization — Dockerfile vs. Jib](#containerization--dockerfile-vs-jib) for the full plan.
-- **`config-server` integration** — implemented and reachable, but no service pulls config from it
-  yet; every service still configures itself via its own `application.properties`.
 - **Elasticsearch/Logstash/Kibana (Sprint 6)** — structured JSON logs with trace-correlated fields
   exist on every service's stdout; nothing ships them to a log store yet.
 - **Prometheus/Grafana (Sprint 9)** — Actuator/Micrometer expose the metrics; no scraping or
