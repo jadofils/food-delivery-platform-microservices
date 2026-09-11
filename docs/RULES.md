@@ -19,8 +19,8 @@ of these is not done, regardless of what its acceptance criteria say.
 |---|--------|----------------------|
 | 1 | **Codebase** | One repository, one module per service, tracked in git. A module is independently buildable and independently deployable even though it lives in a shared repo — the monorepo is a convenience for review and CI, not a coupling mechanism. Never let one service's code import another service's package. |
 | 2 | **Dependencies** | Explicitly declared, never assumed. See [§4 Dependency management](#4-dependency-management) — the root POM manages *versions*, each service declares its own *dependencies*. |
-| 3 | **Config** | No hostnames, credentials, queue names, or feature flags in code. Config comes from Spring Cloud Config Server + environment variables / Docker secrets. `application-{profile}.yml` selects environment (`local`, `docker`, `staging`, `prod`) — it never contains secrets, only structure. |
-| 4 | **Backing services** | Postgres, MongoDB, RabbitMQ, Redis, Zipkin, Eureka, and Config Server are all attached resources, reachable only via config (URL + credentials). A service must be able to point at a different Postgres instance by changing config, not code. |
+| 3 | **Config** | No hostnames, credentials, queue names, or feature flags in code. Config comes from each service's own `application-{profile}.properties` + environment variables / Docker secrets — no dedicated config-serving service (`config-server` was retired unused; see `docs/decisions/0002-retire-config-server.md`). `application-{profile}.properties` selects environment (`local`, `docker`, `staging`, `prod`) — it never contains secrets, only structure. |
+| 4 | **Backing services** | Postgres, MongoDB, RabbitMQ, Redis, Zipkin, and Eureka are all attached resources, reachable only via config (URL + credentials). A service must be able to point at a different Postgres instance by changing config, not code. |
 | 5 | **Build, release, run** | CI builds one immutable artifact (Docker image tagged with git SHA) per merge to `main`. That same image is promoted across environments unchanged — config is injected at run time, never baked in at build time. |
 | 6 | **Processes** | Services are stateless and share-nothing. No in-memory HTTP sessions, no local file state. Anything that needs to persist across requests goes to Postgres/MongoDB; anything that needs to be shared across instances but is disposable goes to Redis. |
 | 7 | **Port binding** | Each service is self-contained and exports HTTP via its own embedded server (Netty/Tomcat) on its assigned port (see [§2](#2-service-inventory)). No service depends on being deployed inside an external servlet container. |
@@ -36,7 +36,6 @@ of these is not done, regardless of what its acceptance criteria say.
 
 | Service | Responsibility | Datastore | Port |
 |---|---|---|---|
-| `config-server` | Centralized externalized configuration for every other service | — | 8888 (fixed) |
 | `discovery-server` | Eureka service registry | — | 8761 (fixed) |
 | `api-gateway` | Single entry point: routing, JWT validation, rate limiting | — | 8080 (fixed) |
 | `customer-service` | Customer profiles, delivery addresses | `customer_db` (Postgres) | dynamic |
@@ -45,7 +44,7 @@ of these is not done, regardless of what its acceptance criteria say.
 | `delivery-service` | Delivery assignment and tracking | `delivery_db` (Postgres) | dynamic |
 | `notification-service` | Consumes domain events, dispatches notifications, persists notification/audit log | `notification_db` (MongoDB) | dynamic |
 
-**Fixed vs. dynamic ports:** `config-server`, `discovery-server`, and `api-gateway` are
+**Fixed vs. dynamic ports:** `discovery-server` and `api-gateway` are
 infrastructure with a well-known address every other component bootstraps from or routes through —
 they keep a fixed port. Every domain service (`customer-`/`restaurant-`/`order-`/`delivery-`/
 `notification-service`) sets `server.port=0` (OS-assigned) and is reached exclusively through
@@ -59,8 +58,10 @@ find it, which is the point: nothing outside the platform should ever depend on 
 port being any particular value, or being stable across a restart.
 
 Port 8081 is retired, not reassigned — it belonged to the now-retired `identity-service` (see
-`docs/decisions/`; Keycloak owns identity now, on its own port, listed below). Left as a gap
-rather than renumbering everything else, which would just be churn.
+`docs/decisions/`; Keycloak owns identity now, on its own port, listed below). Port 8888 is
+retired too — it belonged to `config-server`, removed after it went unused for its entire
+lifetime (`docs/decisions/0002-retire-config-server.md`). Both left as gaps rather than
+renumbering everything else, which would just be churn.
 
 Infrastructure (not services, but required backing resources): PostgreSQL, MongoDB, RabbitMQ,
 Redis, Keycloak (:8180), Zipkin, Elasticsearch, Logstash, Kibana. All defined in
@@ -75,7 +76,6 @@ This supersedes the port list in `ReadMe.md`, which predates `notification-servi
 ```
 fdp/
 ├── pom.xml                    # aggregator: <packaging>pom</packaging>, dependencyManagement only
-├── config-server/
 ├── discovery-server/
 ├── api-gateway/
 ├── customer-service/
@@ -251,9 +251,9 @@ used to build them.
   consistent access pattern for whoever requests tokens) rather than rediscovering it by a
   confusing 401.
 - Secrets (DB credentials, Keycloak admin credentials, RabbitMQ credentials) are never committed.
-  They are injected via environment variables / Docker secrets and sourced from Config Server's
-  encrypted properties, not from a plaintext file in this repo — `credentials.md`'s seeded demo
-  accounts are the sole, explicit, documented exception (RULES.md itself, not a leak).
+  They are injected via environment variables / Docker secrets, not from a plaintext file in this
+  repo — `credentials.md`'s seeded demo accounts are the sole, explicit, documented exception
+  (RULES.md itself, not a leak).
 
 ### PII masking
 
@@ -305,7 +305,7 @@ used to build them.
   any other Postgres-backed database here) — Keycloak owns that schema entirely; FDP's Flyway
   migrations never touch it (§5, §8).
 - Health checks are mandatory on every container; `depends_on` uses `condition: service_healthy`
-  so `discovery-server` and `config-server` are ready before dependents start, and infra
+  so `discovery-server` is ready before dependents start, and infra
   (databases, broker) is ready before any service that needs it.
 - Each service ships an `application-docker.yml` using Docker service names for hostnames
   (`jdbc:postgresql://postgres:5432/order_db`) and environment variables for secrets — never a

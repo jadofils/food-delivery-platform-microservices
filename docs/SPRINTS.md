@@ -51,7 +51,12 @@ trivial PR against any module demonstrates the CI gate + auto-merge working end 
 **Superseded scope note:** this sprint originally built a custom `identity-service` — its own
 `User`/`Role`/`Permission` schema, registration/login endpoints, and a hand-rolled nested-JWT
 codec. That was retired in favor of Keycloak (`docs/decisions/0001-retire-identity-service-for-keycloak.md`);
-the bullets below describe what actually ships now, not the original plan.
+the bullets below describe what actually ships now, not the original plan. This sprint also built
+`config-server` (below) — it worked exactly as documented, but no service ever actually consumed
+it (confirmed: no other service's `application.properties` ever set `spring.config.import`), and
+it was later retired unused (`docs/decisions/0002-retire-config-server.md`). The bullet below is
+left as the historical record of what was verified at the time, not a claim that the module still
+exists.
 
 - `discovery-server` (Eureka) stood up, dashboard reachable at `:8761`. **Done and verified
   live:** `@EnableEurekaServer`, standalone mode (`register-with-eureka=false`,
@@ -414,8 +419,9 @@ everything Sprint 6 configured).
 ## Sequencing notes
 
 - Sprints 0–1 are a hard prerequisite for everything else — no domain service should be started
-  before `discovery-server`/`config-server`/Keycloak exist, or it'll be retrofitted later at real
-  cost.
+  before `discovery-server`/Keycloak exist, or it'll be retrofitted later at real cost.
+  (`config-server` was originally part of this list too; it's since been retired unused — see
+  `docs/decisions/0002-retire-config-server.md`.)
 - Sprints 2–5 build the domain services in dependency order (`order-service` needs `customer-` and
   `restaurant-service` to exist first; `delivery-` and `notification-service` need `order-service`
   publishing events first).
