@@ -1,11 +1,16 @@
 package food_delivery.Platform.customerservice.controller;
 
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,9 +19,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import food_delivery.Platform.customerservice.AbstractIntegrationTest;
+import food_delivery.Platform.customerservice.client.OrderServiceGateway;
+import food_delivery.Platform.customerservice.client.dto.OrderSummaryResponse;
 
 /**
  * Exercises the exact flow a Postman collection also exercises: register → get own profile
@@ -30,6 +38,9 @@ class CustomerControllerIT extends AbstractIntegrationTest {
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@MockitoBean
+	private OrderServiceGateway orderServiceGateway;
 
 	/** Mirrors the seeded {@code customer@fdp.test} demo account's actual role set (fdp-realm.json). */
 	private static JwtRequestPostProcessor customer(String sub) {
@@ -128,6 +139,54 @@ class CustomerControllerIT extends AbstractIntegrationTest {
 						.content("{\"phoneNumber\":\"+15559999999\"}"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.phoneNumber").value("+" + "*****" + "9"));
+	}
+
+	@Test
+	void getOwnOverview_returnsProfileAddressesAndOrders() throws Exception {
+		String sub = "kc-user-overview-1";
+		mockMvc.perform(post("/api/customers/me")
+						.with(customer(sub))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"phoneNumber\":\"+15551234567\"}"))
+				.andExpect(status().isCreated());
+		mockMvc.perform(post("/api/customers/me/addresses")
+						.with(customer(sub))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"label":"Home","street":"1 Ave","city":"Kigali","state":"Kigali City",
+								 "postalCode":"00000","country":"Rwanda","isDefault":true}"""))
+				.andExpect(status().isCreated());
+
+		when(orderServiceGateway.getMyOrders()).thenReturn(List.of(
+				new OrderSummaryResponse(1L, 1L, "PLACED", new BigDecimal("11.00"), Instant.now(), "PICKED_UP")));
+
+		mockMvc.perform(get("/api/customers/me/overview").with(customer(sub)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.profile.phoneNumber").value("+" + "*****" + "7"))
+				.andExpect(jsonPath("$.addresses[0].city").value("Kigali"))
+				.andExpect(jsonPath("$.orders[0].status").value("PLACED"))
+				.andExpect(jsonPath("$.orders[0].deliveryStatus").value("PICKED_UP"));
+	}
+
+	@Test
+	void getOwnOverview_ordersIsEmpty_whenOrderServiceUnavailable() throws Exception {
+		String sub = "kc-user-overview-2";
+		mockMvc.perform(post("/api/customers/me")
+						.with(customer(sub))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"phoneNumber\":\"+15551234567\"}"))
+				.andExpect(status().isCreated());
+
+		// orderServiceGateway is left unstubbed -- Mockito's own default for a List-returning method
+		// is an empty list, exactly what OrderServiceGateway itself returns when order-service is
+		// unreachable (see its own class comment) -- the rest of the overview must still come back.
+		mockMvc.perform(get("/api/customers/me/overview").with(customer(sub)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.profile.firstName").value("Demo"))
+				.andExpect(jsonPath("$.addresses").isArray())
+				.andExpect(jsonPath("$.addresses").isEmpty())
+				.andExpect(jsonPath("$.orders").isArray())
+				.andExpect(jsonPath("$.orders").isEmpty());
 	}
 
 	@Test

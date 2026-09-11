@@ -50,6 +50,25 @@
 			<groupId>org.springframework.cloud</groupId>
 			<artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
 		</dependency>
+		<!-- customer-service's own overview aggregation (GET /api/customers/me/overview) calls
+			 order-service via OpenFeign, resolved through Eureka: the first outbound dependency this
+			 service has ever had. Version managed by spring-cloud-dependencies (RULES.md §4). -->
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-openfeign</artifactId>
+		</dependency>
+		<!-- Without this, the outbound Feign call to order-service carries no trace-propagation
+			 headers (same gap order-service's own pom.xml documents for its own Feign clients).
+			 Version managed by spring-cloud-dependencies (RULES.md §4). -->
+		<dependency>
+			<groupId>io.github.openfeign</groupId>
+			<artifactId>feign-micrometer</artifactId>
+		</dependency>
+		<!-- Version managed by the root aggregator's resilience4j-bom import (RULES.md §4) -->
+		<dependency>
+			<groupId>io.github.resilience4j</groupId>
+			<artifactId>resilience4j-spring-boot3</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>

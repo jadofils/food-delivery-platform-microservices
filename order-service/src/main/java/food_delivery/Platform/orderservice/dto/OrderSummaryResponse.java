@@ -22,16 +22,35 @@ public record OrderSummaryResponse(
 		Long deliveryAddressId,
 		OrderStatus status,
 		BigDecimal totalAmount,
-		Instant createdAt) {
+		Instant createdAt,
+		String deliveryStatus) {
 
+	/**
+	 * Used where a live delivery-service round trip isn't warranted for every row (none today, but
+	 * kept for symmetry with {@code OrderResponse#from(Order)}) — {@code deliveryStatus} is
+	 * {@code null} here, not fetched.
+	 */
 	public static OrderSummaryResponse from(Order order) {
+		return from(order, null);
+	}
+
+	/**
+	 * Used by the list route, which enriches every row with delivery-service's live status
+	 * (RULES.md §6) — one Feign call per row on the current page, not batched. Acceptable for a
+	 * bounded page size (Pageable's own default/max), and consistent with the same
+	 * one-call-per-order pattern the single get-by-id route already uses; see
+	 * {@code DeliveryServiceGateway}'s own class comment for why a failed/slow call degrades to
+	 * {@code null} instead of failing the whole list.
+	 */
+	public static OrderSummaryResponse from(Order order, String deliveryStatus) {
 		return new OrderSummaryResponse(
 				order.getId(),
 				order.getRestaurantId(),
 				order.getDeliveryAddressId(),
 				order.getStatus(),
 				order.getTotalAmount(),
-				order.getCreatedAt());
+				order.getCreatedAt(),
+				deliveryStatus);
 	}
 
 }

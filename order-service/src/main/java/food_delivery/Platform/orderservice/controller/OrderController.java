@@ -48,11 +48,12 @@ public class OrderController {
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
 	}
 
-	@Operation(summary = "List the caller's own orders (summary view — no item breakdown; see get-by-id for that)")
+	@Operation(summary = "List the caller's own orders (summary view — no item breakdown; see get-by-id for that), including live delivery status per order")
 	@PreAuthorize("hasAuthority('order:read')")
 	@GetMapping
 	public Page<OrderSummaryResponse> list(@AuthenticationPrincipal Jwt jwt, Pageable pageable) {
-		return orderService.listOwn(jwt, pageable).map(OrderSummaryResponse::from);
+		return orderService.listOwn(jwt, pageable)
+				.map(order -> OrderSummaryResponse.from(order, orderService.getDeliveryStatus(order.getId())));
 	}
 
 	@Operation(summary = "Get one of the caller's own orders, including live delivery status (order tracking) when available")
