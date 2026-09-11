@@ -202,11 +202,23 @@ sequenceDiagram
     GW->>OS: lb://order-service
     OS->>CS: Feign: validate customer + delivery address
     CS-->>OS: 200 OK
-    OS->>RS: Feign: validate menu items, snapshot price
-    RS-->>OS: 200 OK (price, item names)
-    OS->>OS: persist Order (status=PLACED)
-    OS-->>GW: 201 Created
-    GW-->>Customer: 201 Created
+    OS->>RS: Feign: GET /api/restaurants/{id} (exists? open?)
+    alt restaurant not found
+        RS-->>OS: 404
+        OS-->>GW: 404 RESOURCE_NOT_FOUND
+        GW-->>Customer: 404 RESOURCE_NOT_FOUND
+    else restaurant closed
+        RS-->>OS: 200 OK (isOpen=false)
+        OS-->>GW: 422 BUSINESS_RULE_VIOLATION
+        GW-->>Customer: 422 BUSINESS_RULE_VIOLATION
+    else restaurant open
+        RS-->>OS: 200 OK (isOpen=true)
+        OS->>RS: Feign: GET .../menu-items (validate items, snapshot price)
+        RS-->>OS: 200 OK (price, item names)
+        OS->>OS: persist Order (status=PLACED)
+        OS-->>GW: 201 Created
+        GW-->>Customer: 201 Created
+    end
     OS->>MQ: publish OrderPlacedEvent
 
     par delivery-service consumes independently
@@ -273,7 +285,8 @@ Not everything is async, and not everything is sync — the split is deliberate,
 | Call | Style | Why |
 |---|---|---|
 | `order-service` → `customer-service` (validate customer + address) | **Sync** (OpenFeign) | Placing an order needs a real, immediate answer — there is no correct way to accept an order for a customer/address that turns out not to exist. |
-| `order-service` → `restaurant-service` (validate menu items, snapshot price) | **Sync** (OpenFeign) | Same reason: the authoritative price *at the moment of placement* must be known before the order is persisted, not discovered later. |
+| `order-service` → `restaurant-service`, call 1: `GET /api/restaurants/{id}` (does the restaurant exist, and is it open?) | **Sync** (OpenFeign) | This is the actual "how do we ensure the restaurant exists" check — `OrderService.placeOrder` calls this *before* touching the menu at all. A `404` from `restaurant-service` (no such id) is caught by `RestaurantServiceGateway` and re-thrown as `ResourceNotFoundException` → the client gets a `404`, not a 500 or a silently-created order for a restaurant that doesn't exist. If the restaurant *does* exist but `isOpen=false`, order placement is refused with a `422 BUSINESS_RULE_VIOLATION` ("Restaurant `<name>` is currently closed.") — a different failure mode from "not found," both checked synchronously, both before anything is persisted. |
+| `order-service` → `restaurant-service`, call 2: `GET /api/restaurants/{id}/menu-items` (validate items, snapshot price) | **Sync** (OpenFeign) | Only reached once call 1 has confirmed the restaurant exists and is open. Every requested `menuItemId` must be present and `available` on that exact response; price and item name are copied from *this* response into the order, never taken from the client's request body — so a stale/tampered client-supplied price can never be persisted, and the order's price stays historically accurate even if the restaurant later changes it. |
 | `order-service` → `delivery-service` (`GET /api/orders/me/{id}`'s live `deliveryStatus`) | **Sync** (OpenFeign) | A read of current state, needed right now to answer the caller — and it degrades to `null`, not an error, if `delivery-service` is down, so this sync call is never a hard dependency for placing an order. |
 | `order-service` **→(event)→** `delivery-service` (create the delivery assignment) | **Async** (RabbitMQ) | This is exactly the monolith's original problem (`docs/ReadMe.md` "Key problems to solve": *"Delivery status updates are sent synchronously inside the order flow, blocking the response"*). Assignment creation is a side effect of placing an order, not something the customer's `201 Created` should ever wait on or fail because of. |
 | `order-service` **→(event)→** `notification-service` (record `ORDER_PLACED`/`ORDER_CANCELLED`) | **Async** (RabbitMQ) | Same reasoning — a customer's order placement must never fail or slow down because the notification/audit log happens to be unavailable. |
