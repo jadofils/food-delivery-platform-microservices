@@ -27,6 +27,7 @@ which user stories are done, partially done, or still open.
 - [Epics & user stories — verified against the implementation](#epics--user-stories--verified-against-the-implementation)
 - [Documentation map](#documentation-map)
 - [Running & testing the system](#running--testing-the-system)
+- [Operational endpoints — while the system is running](#operational-endpoints--while-the-system-is-running)
 - [Known gaps / roadmap](#known-gaps--roadmap)
 
 ---
@@ -96,7 +97,8 @@ flowchart TB
     MQ{{"RabbitMQ<br/>fdp.order-events / fdp.delivery-events<br/>+ per-consumer DLQs"}}
     Zipkin["Zipkin :9411<br/>distributed tracing"]
 
-    Client --> GW
+    Client -- "1. login (password grant)<br/>direct — never through the gateway" --> KC
+    Client -- "2. every other call, JWT from step 1" --> GW
     GW -- "lb://customer-service" --> CS
     GW -- "lb://restaurant-service" --> RS
     GW -- "lb://order-service" --> OS
@@ -142,6 +144,16 @@ flowchart TB
 ```
 
 **Reading this diagram:**
+- **The gateway never issues a token, only validates one.** `api-gateway`'s route table
+  (`api-gateway/src/main/resources/application.properties`) has no route to Keycloak at all —
+  grep it and there's nothing under `/realms/**`. A client gets its JWT by calling Keycloak's
+  own token endpoint *directly*, on Keycloak's own port (`http://localhost:8180/realms/fdp/protocol/openid-connect/token`),
+  completely out of band from the gateway (edge **1** above) — then attaches that JWT as
+  `Authorization: Bearer <token>` on every subsequent call to `api-gateway` (edge **2**). This is
+  why every dotted `validates JWT via JWKS` arrow below points *from* a service *to* Keycloak,
+  never the other way around: JWKS validation only needs Keycloak's public signing keys (a GET
+  against `/protocol/openid-connect/certs`), not a round trip per request — each service caches
+  the key set and verifies the JWT's signature locally.
 - **Solid arrows** are real traffic: client → gateway → domain service, Feign calls between
   domain services, and event publish/consume through RabbitMQ.
 - **Dotted arrows** are cross-cutting infrastructure concerns every service participates in
@@ -166,6 +178,7 @@ synchronous (Feign) and asynchronous (RabbitMQ) communication, and is the flow
 ```mermaid
 sequenceDiagram
     actor Customer
+    participant KC as Keycloak
     participant GW as api-gateway
     participant OS as order-service
     participant CS as customer-service
@@ -175,7 +188,14 @@ sequenceDiagram
     participant NS as notification-service
     actor Agent as delivery-agent
 
-    Customer->>GW: POST /api/orders/me (JWT)
+    rect rgb(245, 245, 235)
+    Customer->>KC: POST /realms/fdp/protocol/openid-connect/token<br/>(username + password, grant_type=password)
+    KC-->>Customer: access_token (JWT, signed, 15 min TTL)
+    Note over Customer,KC: Direct call, port :8180 — api-gateway is never<br/>involved in issuing a token, only in validating one.
+    end
+
+    Customer->>GW: POST /api/orders/me (Authorization: Bearer JWT)
+    GW->>KC: (cached) fetch JWKS once, then verify signature locally
     GW->>GW: validate JWT, rate-limit check
     GW->>OS: lb://order-service
     OS->>CS: Feign: validate customer + delivery address
@@ -224,6 +244,10 @@ sequenceDiagram
 
 **What this proves, verified live** (not just designed this way — see `docs/SPRINTS.md` Sprints 3–5
 and this session's own Postman/Newman runs):
+- Login is a one-time, direct call to Keycloak (`credentials.md` has the exact `curl`) — nothing
+  about placing an order or any other business call involves the gateway in issuing a token. Every
+  Postman collection's own "1. Get Tokens" folder calls Keycloak directly, on `:8180`, for exactly
+  this reason.
 - Placing an order never blocks on delivery or notification processing — both consume the event
   independently, on their own schedule.
 - `order-service`'s own `GET /api/orders/me/{id}` shows live `deliveryStatus` via a direct Feign
@@ -656,6 +680,83 @@ curl -s http://localhost:8761/eureka/apps/RESTAURANT-SERVICE -H "Accept: applica
 # Restart restaurant-service; wait ~10s (circuit breaker's wait-duration-in-open-state); order
 # placement recovers on its own, no restart of order-service needed.
 ```
+
+---
+
+## Operational endpoints — while the system is running
+
+Everything below assumes the full stack is up (`docker compose up -d` + all eight services). Fixed
+addresses are stable across restarts; domain-service Swagger UIs are not (`server.port=0`), so
+those are looked up via Eureka first — same command every time, swap the service name.
+
+### Eureka dashboard
+
+| What | URL |
+|---|---|
+| Dashboard (who's registered, right now) | `http://localhost:8761` |
+| A specific service's current instance(s)/port(s), as JSON | `GET http://localhost:8761/eureka/apps/<SERVICE-NAME>` (uppercase, e.g. `CUSTOMER-SERVICE`) |
+
+### Keycloak — no Swagger; these are the actual OIDC REST endpoints
+
+| What | URL |
+|---|---|
+| Get a token (login) | `POST http://localhost:8180/realms/fdp/protocol/openid-connect/token`<br>body: `grant_type=password&client_id=fdp-api&username=<user>&password=<pass>&scope=openid` |
+| Admin console | `http://localhost:8180` → login `kcadmin`/`kcadmin` (`.env.example`) → pick the **fdp** realm |
+| JWKS (public signing keys) | `GET http://localhost:8180/realms/fdp/protocol/openid-connect/certs` |
+| Userinfo | `GET http://localhost:8180/realms/fdp/protocol/openid-connect/userinfo` (Bearer token, needs `scope=openid`) |
+| OIDC discovery document | `GET http://localhost:8180/realms/fdp/.well-known/openid-configuration` |
+
+Seeded demo accounts/passwords: `credentials.md`.
+
+### Swagger UI — per domain service, at its *current* live port
+
+```bash
+curl -s http://localhost:8761/eureka/apps/CUSTOMER-SERVICE -H "Accept: application/json" \
+  | grep -o '"port":{[^}]*}'
+# then open http://localhost:<that port>/swagger-ui/index.html
+```
+Works for `CUSTOMER-SERVICE`, `RESTAURANT-SERVICE`, `ORDER-SERVICE`, `DELIVERY-SERVICE`,
+`NOTIFICATION-SERVICE` — swap the name. `discovery-server`/`config-server`/`api-gateway` have no
+Swagger UI (pure infra, or edge routing only — see [Service inventory](#service-inventory)). To
+call an endpoint from Swagger UI: **Authorize** (padlock icon) → paste the raw JWT from the
+Keycloak call above (no `Bearer ` prefix — Swagger adds that itself) → **Authorize** → **Close**.
+
+### Zipkin — distributed tracing
+
+| What | URL |
+|---|---|
+| Zipkin UI | `http://localhost:9411` |
+| Search recent traces for one service | `GET http://localhost:9411/api/v2/traces?serviceName=order-service` |
+| Fetch one trace by ID | `GET http://localhost:9411/api/v2/trace/{traceId}` |
+| Service dependency graph (derived from recent traces) | `GET http://localhost:9411/api/v2/dependencies` |
+| Open a specific failed request's trace | copy the `traceId` field off *any* FDP error response, open `http://localhost:9411/zipkin/traces/{traceId}` directly |
+
+Every domain service (`customer-`/`restaurant-`/`order-`/`delivery-`/`notification-service`)
+reports real spans — `api-gateway` doesn't yet (see
+[Known gaps](#known-gaps--roadmap)). Placing one real order through the gateway produces **one
+trace spanning all five domain services plus RabbitMQ plus Redis** — search
+`http://localhost:9411/api/v2/traces?serviceName=order-service&limit=1` right after placing an
+order to see it.
+
+### RabbitMQ management UI
+
+| What | URL |
+|---|---|
+| Management UI | `http://localhost:15672` → login `fdp`/`fdp` (`.env.example`) |
+| See a published event that hasn't been consumed yet | **Queues** → `order-events.inspection` → **Get messages** |
+| Watch a specific consumer's queue depth | **Queues** → `delivery-service.order-events` / `notification-service.order-events` / `notification-service.delivery-events` |
+| See a poisoned message that hit the dead-letter queue | **Queues** → `<service>.order-events.dlq` (or `.delivery-events.dlq`) |
+
+See [Asynchronous communication — RabbitMQ](#asynchronous-communication--rabbitmq) for the full
+exchange/queue/binding topology these queue names come from.
+
+### Actuator — health, info, circuit breakers, log levels
+
+| What | URL |
+|---|---|
+| Health (any service) | `GET http://localhost:<port>/actuator/health` — `api-gateway`'s own also aggregates every registered service's status, since it holds the Eureka client view: `http://localhost:8080/actuator/health` |
+| Circuit breaker state | `GET http://localhost:<order-service port>/actuator/circuitbreakers` — the only service with breakers today |
+| Read/change a log level at runtime, no restart | `GET`/`POST http://localhost:<port>/actuator/loggers/<package>` |
 
 ---
 
