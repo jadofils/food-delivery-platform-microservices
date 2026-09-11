@@ -21,6 +21,7 @@ which user stories are done, partially done, or still open.
 - [Project overview](#project-overview)
 - [System architecture](#system-architecture)
 - [Request & event flow](#request--event-flow)
+- [Synchronous communication — OpenFeign](#synchronous-communication--openfeign)
 - [Asynchronous communication — RabbitMQ](#asynchronous-communication--rabbitmq)
 - [Containerization — Dockerfile vs. Jib](#containerization--dockerfile-vs-jib)
 - [Service inventory](#service-inventory)
@@ -273,6 +274,109 @@ and this session's own Postman/Newman runs):
 - Stopping `restaurant-service` mid-flow makes order placement fail with a clean `503` in a few
   seconds (Resilience4j circuit breaker + Feign timeout, `docs/RULES.md` §7), not a hang — and
   recovers on its own once `restaurant-service` comes back.
+
+---
+
+## Synchronous communication — OpenFeign
+
+Every sync inter-service call in this codebase (`order-service → customer-service`,
+`order-service → restaurant-service`, `order-service → delivery-service`,
+`customer-service → order-service`) follows the exact same three-layer pattern. Once you've read
+one, you've read all four.
+
+### The three layers, and where each one lives
+
+| Layer | What it does | Knows about resilience/HTTP? |
+|---|---|---|
+| **The Feign client interface** (`client/<Target>ServiceClient.java`) | Declares the HTTP contract only — `@FeignClient(name = ...)` plus one `@GetMapping`/`@PostMapping` method per endpoint it calls | No — pure interface, no method bodies |
+| **The gateway wrapper** (`client/<Target>ServiceGateway.java`) | Calls the client, translates specific `FeignException`s into this service's own `DomainException`s, and carries the `@CircuitBreaker`/`@Retry`/`@Bulkhead` trio (`docs/RULES.md` §7) plus a fallback method | Yes — this is the *only* place resilience/HTTP-failure handling lives |
+| **The calling service class** (e.g. `service/OrderService.java`) | Calls the gateway's plain Java method | No — it has no idea Feign, HTTP, or Resilience4j are involved at all |
+
+Two more pieces are shared across every client in a given service, not duplicated per target:
+- **`client/ServiceNames.java`** — the one place each downstream service's Eureka-registered
+  logical name is spelled out (e.g. `RESTAURANT_SERVICE = "restaurant-service"`), so
+  `@FeignClient(name = ...)` and the Resilience4j instance name it's paired with can never drift
+  out of sync with each other. (`application.properties`' own `resilience4j.*.instances.<name>.*`
+  keys are plain text, not Java, so those still have to be kept in sync by hand — commented
+  in-place to say so.)
+- **`client/TokenRelayRequestInterceptor.java`** — a `@Component` `RequestInterceptor` that copies
+  the *inbound* request's own `Authorization` header onto every outbound Feign call. The calling
+  service never mints its own credential or calls with elevated permissions — the downstream
+  service sees exactly the same Keycloak-issued token the original caller sent (`docs/RULES.md`
+  §8). Registered once per service, not per client, since every Feign client in that service needs
+  the identical relay.
+
+### Worked example: `order-service → restaurant-service`
+
+The exact code behind the restaurant-existence check from
+[Request & event flow](#request--event-flow) above.
+
+**1. The client interface** (`order-service/src/main/java/.../client/RestaurantServiceClient.java`):
+```java
+@FeignClient(name = ServiceNames.RESTAURANT_SERVICE)
+public interface RestaurantServiceClient {
+
+    @GetMapping("/api/restaurants/{id}")
+    RestaurantValidationResponse getRestaurant(@PathVariable("id") Long id);
+
+    @GetMapping("/api/restaurants/{id}/menu-items")
+    List<MenuItemValidationResponse> getMenuItems(@PathVariable("id") Long id);
+}
+```
+
+**2. The gateway wrapper** (`.../client/RestaurantServiceGateway.java`) — resilience +
+exception translation, nothing else:
+```java
+@CircuitBreaker(name = INSTANCE, fallbackMethod = "restaurantFallback")
+@Retry(name = INSTANCE)
+@Bulkhead(name = INSTANCE)
+public RestaurantValidationResponse getRestaurant(Long id) {
+    try {
+        return client.getRestaurant(id);
+    } catch (FeignException.NotFound e) {
+        throw new ResourceNotFoundException("No restaurant with id " + id, e);
+    }
+}
+
+@SuppressWarnings("unused")
+private RestaurantValidationResponse restaurantFallback(Long id, Throwable t) {
+    throw new ServiceUnavailableException(INSTANCE + " is currently unavailable. Please try again shortly.", t);
+}
+```
+
+**3. Where it's actually called** (`order-service/src/main/java/.../service/OrderService.java`,
+inside `placeOrder`):
+```java
+// 2. Sync validation against restaurant-service — restaurant must exist and be open.
+var restaurant = restaurantServiceGateway.getRestaurant(request.restaurantId());
+if (!restaurant.isOpen()) {
+    throw new BusinessRuleViolationException("Restaurant " + restaurant.name() + " is currently closed.");
+}
+
+// 3. Every requested item must exist on that restaurant's menu and be available; price is
+// always the restaurant's current price, never a client-supplied one.
+List<MenuItemValidationResponse> menu = restaurantServiceGateway.getMenuItems(request.restaurantId());
+```
+
+`OrderService` calls `restaurantServiceGateway.getRestaurant(id)` like any other Java method —
+no `@FeignClient`, no HTTP status code, no circuit-breaker annotation in sight. Every failure mode
+(not found, closed, restaurant-service down) has already been turned into one of this codebase's
+own typed exceptions by the time it reaches this class, which is exactly the point of the
+three-layer split.
+
+### Every sync pair in the system
+
+| Caller | Callee | Client / Gateway files (relative to the caller's own `src/main/java/.../client/`) |
+|---|---|---|
+| `order-service` | `customer-service` | `CustomerServiceClient.java` / `CustomerServiceGateway.java` |
+| `order-service` | `restaurant-service` | `RestaurantServiceClient.java` / `RestaurantServiceGateway.java` |
+| `order-service` | `delivery-service` | `DeliveryServiceClient.java` / `DeliveryServiceGateway.java` |
+| `customer-service` | `order-service` | `OrderServiceClient.java` / `OrderServiceGateway.java` |
+
+`restaurant-service`, `delivery-service`, and `notification-service` never call any other domain
+service synchronously — `restaurant-service` and `notification-service` have no outbound Feign
+clients at all, and `delivery-service` only reacts to events (see
+[Asynchronous communication](#asynchronous-communication--rabbitmq) below).
 
 ---
 
