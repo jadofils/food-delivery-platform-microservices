@@ -349,7 +349,19 @@ docker exec -it fdp-redis redis-cli -a fdp
 
 ## Zipkin
 
-No credentials — `http://localhost:9411` is open, no auth configured (local dev only).
+| | |
+|---|---|
+| Dashboard UI | `http://localhost:9411` |
+| Username / password | — none, no auth configured (local dev only) |
+| Search recent traces for one service | `GET http://localhost:9411/api/v2/traces?serviceName=order-service` |
+| Fetch one trace by ID | `GET http://localhost:9411/api/v2/trace/{traceId}` |
+| Service dependency graph | `GET http://localhost:9411/api/v2/dependencies` |
+
+Every domain service (`customer-`/`restaurant-`/`order-`/`delivery-`/`notification-service`)
+reports real spans; `api-gateway` doesn't yet (no tracing dependency of its own — see
+[Known gaps](README.md#known-gaps--roadmap)). Place one real order through the gateway, then open
+the dashboard URL above and search `order-service` — one trace spans all five domain services plus
+RabbitMQ plus Redis.
 
 ---
 
