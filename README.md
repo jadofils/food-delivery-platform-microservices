@@ -696,15 +696,30 @@ those are looked up via Eureka first — same command every time, swap the servi
 | Dashboard (who's registered, right now) | `http://localhost:8761` |
 | A specific service's current instance(s)/port(s), as JSON | `GET http://localhost:8761/eureka/apps/<SERVICE-NAME>` (uppercase, e.g. `CUSTOMER-SERVICE`) |
 
-### Keycloak — no Swagger; these are the actual OIDC REST endpoints
+### Keycloak — no Swagger; every one of these is a stock OIDC/admin endpoint, not FDP code
 
-| What | URL |
+There is no FDP-owned `/auth/**` — `identity-service` was retired in favor of Keycloak
+(`docs/decisions/0001-retire-identity-service-for-keycloak.md`). Every row below is Keycloak's own
+REST API, verified live against the running stack.
+
+| What | Endpoint |
 |---|---|
-| Get a token (login) | `POST http://localhost:8180/realms/fdp/protocol/openid-connect/token`<br>body: `grant_type=password&client_id=fdp-api&username=<user>&password=<pass>&scope=openid` |
-| Admin console | `http://localhost:8180` → login `kcadmin`/`kcadmin` (`.env.example`) → pick the **fdp** realm |
+| **Login** (get a token) | `POST http://localhost:8180/realms/fdp/protocol/openid-connect/token`<br>body: `grant_type=password&client_id=fdp-api&username=<user>&password=<pass>&scope=openid` |
+| **Refresh** (new access token, no password needed again) | same URL as login — body: `grant_type=refresh_token&client_id=fdp-api&refresh_token=<refresh_token>` |
+| **Logout** (invalidate a session) | `POST http://localhost:8180/realms/fdp/protocol/openid-connect/logout`<br>body: `client_id=fdp-api&refresh_token=<refresh_token>` → `204`, both tokens dead immediately |
+| **Who am I** (validate a token server-side) | `GET http://localhost:8180/realms/fdp/protocol/openid-connect/userinfo`<br>header: `Authorization: Bearer <access_token>` — needs the token to carry `scope=openid` |
+| **Register** (browser, self-service) | `http://localhost:8180/realms/fdp/protocol/openid-connect/auth?client_id=fdp-api&response_type=code&scope=openid&redirect_uri=http://localhost:8180` → click **Register** |
+| **Create a user** (admin REST API, scriptable) | 1) get a *master*-realm admin token: `POST http://localhost:8180/realms/master/protocol/openid-connect/token`, body `grant_type=password&client_id=admin-cli&username=kcadmin&password=kcadmin`; 2) `POST http://localhost:8180/admin/realms/fdp/users` with that token + a user JSON body (see `credentials.md` for the exact payload) |
 | JWKS (public signing keys) | `GET http://localhost:8180/realms/fdp/protocol/openid-connect/certs` |
-| Userinfo | `GET http://localhost:8180/realms/fdp/protocol/openid-connect/userinfo` (Bearer token, needs `scope=openid`) |
 | OIDC discovery document | `GET http://localhost:8180/realms/fdp/.well-known/openid-configuration` |
+| Admin console (Keycloak's own UI) | `http://localhost:8180` → login `kcadmin`/`kcadmin` (`.env.example`) → pick the **fdp** realm from the dropdown |
+
+**Known gap, not yet fixed:** a self-registered account (via the browser **Register** link above)
+gets *no* FDP permissions by default — it can call self-service `/me` routes but gets `403` on
+anything gated by a specific permission (`order:create`, `restaurant:menu:read`, etc.), because
+`default-roles-fdp` doesn't carry any `fdp-api` permission strings yet. The seeded demo accounts in
+`credentials.md` (one per role) are unaffected. Full fix recipe (assign the four base `CUSTOMER`
+permissions to `default-roles-fdp`) is in `credentials.md`'s "Register a new customer" section.
 
 Seeded demo accounts/passwords: `credentials.md`.
 
