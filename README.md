@@ -569,7 +569,10 @@ off if you want the Testcontainers-backed suite to run as part of the build inst
 
 ### 3. Start the services, in dependency order
 
-`discovery-server`/`config-server` first (the platform's spine), then the five domain services
+**Java processes only — Keycloak and Zipkin are already up from step 1** and stay up regardless of
+how many times you stop/restart anything below; they're Docker containers, not part of this list,
+and never need restarting alongside it (see [System architecture](#system-architecture) for the
+container-vs-JVM-process split). `discovery-server`/`config-server` first (the platform's spine), then the five domain services
 (order doesn't strictly matter between them, but `order-service` will retry its Feign calls to
 `customer-`/`restaurant-service` if they're not registered yet rather than fail hard), then
 `api-gateway` last, since it needs something registered in Eureka to route to:
